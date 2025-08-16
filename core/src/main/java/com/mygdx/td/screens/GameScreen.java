@@ -1,0 +1,519 @@
+package com.mygdx.td.screens;
+
+import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.Input;
+import com.badlogic.gdx.InputAdapter;
+import com.badlogic.gdx.InputMultiplexer;
+import com.badlogic.gdx.Screen;
+import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.maps.MapLayer;
+import com.badlogic.gdx.maps.MapObject;
+import com.badlogic.gdx.maps.objects.PolylineMapObject;
+import com.badlogic.gdx.maps.objects.RectangleMapObject;
+import com.badlogic.gdx.maps.tiled.TiledMap;
+import com.badlogic.gdx.maps.tiled.TiledMapTileLayer;
+import com.badlogic.gdx.maps.tiled.TmxMapLoader;
+import com.badlogic.gdx.maps.tiled.renderers.OrthogonalTiledMapRenderer;
+import com.badlogic.gdx.maps.tiled.tiles.AnimatedTiledMapTile;
+import com.badlogic.gdx.math.Rectangle;
+import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.utils.ObjectMap;
+import com.badlogic.gdx.utils.viewport.FitViewport;
+import com.badlogic.gdx.utils.viewport.Viewport;
+import com.mygdx.td.Constants;
+import com.mygdx.td.TDGame;
+import com.mygdx.td.animations.EnemyVisual;
+import com.mygdx.td.animations.TowerVisual;
+import com.mygdx.td.entities.Bullet;
+import com.mygdx.td.entities.Enemy;
+import com.mygdx.td.entities.Tower;
+import com.mygdx.td.ui.UIHud;
+import com.mygdx.td.world.TowerSpot;
+import com.mygdx.td.world.World;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
+
+/**
+ * Bản này:
+ * - Thanh máu enemy có độ dài cố định (không dài ra theo round).
+ * - Enemy trâu dần theo round bằng cách nhân HP theo wave (không sửa Enemy).
+ * - Phục hồi cơ chế cộng vàng khi enemy chết (một lần duy nhất mỗi enemy).
+ */
+public class GameScreen extends InputAdapter implements Screen {
+
+    private final TDGame game;
+    private final OrthographicCamera camera;
+    private final Viewport viewport;
+    private final World world;
+
+    private TiledMap tiledMap;
+    private OrthogonalTiledMapRenderer mapRenderer;
+    private int[] belowLayerIndices = null;
+    private int[] aboveLayerIndices = null;
+
+    private final Array<Vector2> loadedWaypoints = new Array<>();
+    private static final String MAP_PATH = "maps/level1.tmx";
+
+    // Enemy strips (điền đúng tên file bạn đang dùng)
+    private static final String ENEMY_BASE = "enemies/wizard";
+    private static final String E_WALK_SIDE = "S_Run.png";
+    private static final String E_WALK_DOWN = "D_Run.png";
+    private static final String E_WALK_UP   = "U_Run.png";
+    private static final String E_DEATH_SIDE   = "S_Death.png";
+    private static final String E_DEATH_DOWN   = "D_Death.png";
+    private static final String E_DEATH_UP     = "U_Death.png";
+    private static final String E_DEATH_GENERIC= null;
+
+    // Kích thước 1 frame của strip kẻ địch
+    private static final int E_FRAME_W = 96;
+    private static final int E_FRAME_H = 96;
+    private static final int E_SPACING_X = 0, E_MARGIN_X = 0, E_MARGIN_Y = 0;
+    private static final int E_FRAMES_WALK  = -1;
+    private static final float E_WALK_SEC   = 0.12f;
+    private static final int E_FRAMES_DEATH = -1;
+    private static final float E_DEATH_SEC  = 0.10f;
+    private static final float ENEMY_TILE_SIZE  = 64f;
+    private static final boolean ENEMY_BASE_FACES_RIGHT = false;
+
+    // Thanh máu cố định (không đổi theo round)
+    private static final float HP_BAR_WIDTH_FIXED = 40f;  // độ dài cố định
+    private static final float HP_BAR_HEIGHT      = 6f;   // chiều cao cố định
+    private static final float HP_BAR_Y_OFFSET    = 38f;  // đẩy lên trên đầu enemy
+
+    // Cơ chế “trâu dần” theo round (HP multiplier mỗi wave)
+    private static final boolean ENABLE_WAVE_HP_SCALING = true;
+    private static final float   HP_MULTIPLIER_PER_WAVE = 1.12f; // mỗi wave HP *= 1.12 (12%)
+    private final Set<Enemy> hpScaledEnemies = new HashSet<>();
+
+    // Cộng vàng khi giết enemy
+    private static final int GOLD_PER_KILL = 5;            // chỉnh nếu cần
+    private final Set<Enemy> rewardedEnemies = new HashSet<>(); // đánh dấu đã trả vàng
+
+    // Tower assets (giữ base như bạn dùng; unit trên tower đang tắt trong TowerVisual.Config)
+    private static final String TOWER_BASE_FOLDER = "towers/wood";
+    private static final String T_BASE_IDLE   = "B_Idle.png";
+    private static final String T_BASE_UPG_1  = "B_Upgrade1.png";
+    private static final String T_BASE_UPG_2  = "B_Upgrade2.png";
+    private static final int    T_BASE_IDLE_FR = 4; private static final float  T_BASE_IDLE_SEC = 0.12f;
+    private static final int    T_UPG1_FR = 4;      private static final float  T_UPG1_SEC = 0.10f;
+    private static final int    T_UPG2_FR = 4;      private static final float  T_UPG2_SEC = 0.10f;
+
+    // Base strip tower: 280x130/4 -> frame 70x130, vẽ đúng size này
+    private static final int   T_BASE_FRAME_W = 70, T_BASE_FRAME_H = 130;
+    private static final int   T_BASE_SPACING_X = 0, T_BASE_MARGIN_X = 0, T_BASE_MARGIN_Y = 0;
+    private static final int   T_DRAW_W = 70, T_DRAW_H = 130;
+    private static final int   T_ANCHOR_BOTTOM_TO_POSY = 32;
+
+    private final ObjectMap<Enemy, EnemyVisual> enemyVisuals = new ObjectMap<>();
+    private final ObjectMap<Enemy, EnemyVisual> dyingEnemyVisuals = new ObjectMap<>();
+    private final ObjectMap<Tower, TowerVisual> towerVisuals = new ObjectMap<>();
+
+    private final Vector2 mouseWorld = new Vector2();
+    private TowerSpot hoverSpot = null;
+
+    private Tower selectedTower = null;
+    private Enemy selectedEnemy = null;
+
+    private final UIHud hud;
+
+    private boolean debugPathLines = false;
+    private boolean debugRanges = true;
+    private boolean debugSpots = false;
+    private boolean onlySelectedTowerRange = false;
+
+    public GameScreen(TDGame game) {
+        this.game = game;
+        camera = new OrthographicCamera();
+        viewport = new FitViewport(Constants.VIRTUAL_WIDTH, Constants.VIRTUAL_HEIGHT, camera);
+        world = new World();
+        loadMap();
+        applyLoadedPath();
+
+        hud = new UIHud(game, world);
+        hud.onStartWave = () -> {
+            if (!world.waveManager.isInWave() && !world.gameOver) world.waveManager.startNextWave();
+        };
+
+        InputMultiplexer mux = new InputMultiplexer();
+        mux.addProcessor(hud.getStage());
+        mux.addProcessor(this);
+        Gdx.input.setInputProcessor(mux);
+
+        hud.updateHudValues(world.waveManager.isInWave());
+    }
+
+    private void loadMap() {
+        try {
+            tiledMap = new TmxMapLoader().load(MAP_PATH);
+            mapRenderer = new OrthogonalTiledMapRenderer(tiledMap, 1f);
+            buildLayerBatches();
+            extractPath();
+            extractTowerSpots();
+        } catch (Exception e) {
+            Gdx.app.error("MAP", "Load map fail: " + e.getMessage());
+        }
+    }
+
+    private void buildLayerBatches() {
+        if (tiledMap == null) return;
+        ArrayList<Integer> below = new ArrayList<>();
+        ArrayList<Integer> above = new ArrayList<>();
+        for (int i = 0; i < tiledMap.getLayers().size(); i++) {
+            var layer = tiledMap.getLayers().get(i);
+            if (!(layer instanceof TiledMapTileLayer)) continue;
+            String n = (layer.getName() == null ? "" : layer.getName().toLowerCase());
+            boolean isAbove = n.contains("above") || n.contains("over") || n.contains("overlay") || n.contains("fg") || n.contains("foreground");
+            if (isAbove) above.add(i); else below.add(i);
+        }
+        belowLayerIndices = below.stream().mapToInt(Integer::intValue).toArray();
+        aboveLayerIndices = above.stream().mapToInt(Integer::intValue).toArray();
+    }
+
+    private void renderMapBelow() {
+        if (mapRenderer != null) {
+            mapRenderer.setView(camera);
+            if (belowLayerIndices != null && belowLayerIndices.length > 0) mapRenderer.render(belowLayerIndices);
+        }
+    }
+    private void renderMapAbove() {
+        if (mapRenderer != null) {
+            mapRenderer.setView(camera);
+            if (aboveLayerIndices != null && aboveLayerIndices.length > 0) mapRenderer.render(aboveLayerIndices);
+        }
+    }
+
+    private void extractPath() {
+        loadedWaypoints.clear();
+        if (tiledMap == null) return;
+        MapLayer layer = tiledMap.getLayers().get("Path");
+        if (layer == null) return;
+        for (MapObject o : layer.getObjects()) {
+            if (o instanceof PolylineMapObject) {
+                float[] v = ((PolylineMapObject) o).getPolyline().getTransformedVertices();
+                for (int i = 0; i < v.length; i += 2) loadedWaypoints.add(new Vector2(v[i], v[i + 1]));
+                break;
+            }
+        }
+    }
+
+    private void extractTowerSpots() {
+        world.towerSpots.clear();
+        if (tiledMap == null) return;
+        MapLayer spots = tiledMap.getLayers().get("TowerSpots");
+        if (spots == null) return;
+        for (MapObject o : spots.getObjects()) {
+            if (o instanceof RectangleMapObject) {
+                Rectangle r = ((RectangleMapObject) o).getRectangle();
+                world.towerSpots.add(new TowerSpot(r));
+            }
+        }
+    }
+
+    private void applyLoadedPath() {
+        if (loadedWaypoints.size >= 2) world.path.loadFrom(loadedWaypoints);
+    }
+
+    @Override
+    public void render(float delta) {
+        update(delta);
+
+        Gdx.gl.glClearColor(0.05f, 0.05f, 0.08f, 1f);
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+
+        camera.update();
+        AnimatedTiledMapTile.updateAnimationBaseTime();
+
+        // Map dưới
+        renderMapBelow();
+
+        // Actors
+        game.batch.setProjectionMatrix(camera.combined);
+        game.batch.begin();
+
+        // Towers
+        for (Tower t : world.towers) {
+            TowerVisual v = towerVisuals.get(t);
+            if (v != null) v.draw(game.batch, t);
+        }
+
+        // Enemies sống
+        for (Enemy e : world.enemies) {
+            EnemyVisual v = enemyVisuals.get(e);
+            if (v != null) v.draw(game.batch, e);
+        }
+        // Enemies dying (đã remove khỏi world nhưng còn anim)
+        for (ObjectMap.Entry<Enemy, EnemyVisual> entry : dyingEnemyVisuals.entries()) {
+            entry.value.draw(game.batch, entry.key);
+        }
+
+        // Bullets
+        for (Bullet b : world.bullets) {
+            game.batch.draw(game.assets.bulletTex, b.pos.x - 4, b.pos.y - 4, 8, 8);
+        }
+
+        game.batch.end();
+
+        // Map trên (overlay)
+        renderMapAbove();
+
+        // HP bars cố định
+        game.batch.begin();
+        for (Enemy e : world.enemies) {
+            if (e.dead) continue;
+            float pctRaw = e.getHpPercent();
+            float pct = Math.max(0f, Math.min(1f, pctRaw));
+
+            float bw = HP_BAR_WIDTH_FIXED, bh = HP_BAR_HEIGHT;
+            float bx = e.pos.x - bw / 2f;
+            float by = e.pos.y + HP_BAR_Y_OFFSET;
+
+            // nền
+            game.batch.setColor(0, 0, 0, 0.6f);
+            game.batch.draw(game.assets.whitePixel, bx, by, bw, bh);
+            // phần đầy theo % máu
+            game.batch.setColor(0, 1, 0, 1);
+            game.batch.draw(game.assets.whitePixel, bx, by, bw * pct, bh);
+            // reset
+            game.batch.setColor(1, 1, 1, 1);
+        }
+        game.batch.end();
+
+        // HUD
+        hud.act(delta);
+        hud.updateHudValues(world.waveManager.isInWave());
+        hud.draw();
+    }
+
+    private void update(float dt) {
+        viewport.unproject(mouseWorld.set(Gdx.input.getX(), Gdx.input.getY()));
+        if (!world.gameOver) {
+            world.update(dt);
+
+            // 1) Cộng vàng ngay khi enemy chuyển sang dead (một lần duy nhất mỗi enemy)
+            applyKillRewards();
+
+            // 2) Scale HP theo wave cho enemy mới spawn
+            applyWaveHpScaling();
+
+            // 3) Visuals
+            syncEnemyVisuals();
+            syncTowerVisuals();
+            updateEnemyVisuals(dt);
+            updateTowerVisuals(dt);
+
+            hoverSpot = findHoverSpot(mouseWorld.x, mouseWorld.y);
+        } else {
+            hoverSpot = null;
+        }
+    }
+
+    private void applyKillRewards() {
+        for (Enemy e : world.enemies) {
+            if (e.isDead() && !rewardedEnemies.contains(e)) {
+                world.gold += GOLD_PER_KILL;  // nếu World có addGold(int) thì đổi sang dùng API đó
+                rewardedEnemies.add(e);
+            }
+        }
+        // Dọn set theo danh sách hiện có để không giữ tham chiếu thừa
+        rewardedEnemies.removeIf(e -> !world.enemies.contains(e, true));
+    }
+
+    private void applyWaveHpScaling() {
+        if (!ENABLE_WAVE_HP_SCALING) return;
+        int waveIndex = 1;
+        try {
+            waveIndex = Math.max(1, world.waveManager.getCurrentWave()); // nếu method khác, đổi lại cho đúng code của bạn
+        } catch (Throwable ignored) {
+            waveIndex = 1;
+        }
+        if (waveIndex <= 1) return;
+
+        float mul = (float) Math.pow(HP_MULTIPLIER_PER_WAVE, waveIndex - 1);
+
+        for (Enemy e : world.enemies) {
+            if (hpScaledEnemies.contains(e)) continue;
+            e.maxHp *= mul;
+            e.hp    *= mul;
+            hpScaledEnemies.add(e);
+        }
+        // dọn set các enemy đã biến mất
+        hpScaledEnemies.removeIf(e -> !world.enemies.contains(e, true));
+    }
+
+    private void updateTowerVisuals(float dt) {
+        for (ObjectMap.Entry<Tower, TowerVisual> entry : towerVisuals.entries()) {
+            entry.value.update(entry.key, dt);
+        }
+    }
+
+    private void updateEnemyVisuals(float dt) {
+        // Enemies sống
+        for (ObjectMap.Entry<Enemy, EnemyVisual> entry : enemyVisuals.entries()) {
+            entry.value.update(entry.key, dt);
+        }
+        // Enemies dying
+        Set<Enemy> toRemove = new HashSet<>();
+        for (ObjectMap.Entry<Enemy, EnemyVisual> entry : dyingEnemyVisuals.entries()) {
+            entry.value.update(entry.key, dt);
+            if (entry.value.isReadyToRemove(entry.key)) {
+                entry.value.dispose();
+                toRemove.add(entry.key);
+            }
+        }
+        for (Enemy e : toRemove) dyingEnemyVisuals.remove(e);
+    }
+
+    private void syncEnemyVisuals() {
+        // Add visuals
+        for (Enemy e : world.enemies) {
+            if (!enemyVisuals.containsKey(e)) {
+                EnemyVisual v = EnemyVisual.fromStripsFixed(
+                    ENEMY_BASE,
+                    E_WALK_SIDE, E_WALK_DOWN, E_WALK_UP,
+                    E_DEATH_SIDE, E_DEATH_DOWN, E_DEATH_UP, E_DEATH_GENERIC,
+                    E_FRAME_W, E_FRAME_H,
+                    E_FRAMES_WALK, E_WALK_SEC,
+                    E_FRAMES_DEATH, E_DEATH_SEC,
+                    E_SPACING_X, E_MARGIN_X, E_MARGIN_Y,
+                    ENEMY_TILE_SIZE, ENEMY_BASE_FACES_RIGHT
+                );
+                enemyVisuals.put(e, v);
+            }
+        }
+        // Move removed enemies to dying list (to finish death anim)
+        Set<Enemy> toMove = new HashSet<>();
+        for (Enemy e : enemyVisuals.keys()) if (!world.enemies.contains(e, true)) toMove.add(e);
+        for (Enemy e : toMove) {
+            EnemyVisual v = enemyVisuals.remove(e);
+            if (v != null) {
+                if (v.isReadyToRemove(e)) v.dispose();
+                else dyingEnemyVisuals.put(e, v);
+            }
+        }
+    }
+
+    private void syncTowerVisuals() {
+        TowerVisual.Config cfg = new TowerVisual.Config();
+        cfg.baseFolder = TOWER_BASE_FOLDER;
+
+        // Base cut
+        cfg.baseFrameW = T_BASE_FRAME_W; cfg.baseFrameH = T_BASE_FRAME_H;
+        cfg.baseSpacingX = T_BASE_SPACING_X; cfg.baseMarginX = T_BASE_MARGIN_X; cfg.baseMarginY = T_BASE_MARGIN_Y;
+
+        // Vẽ tower đúng kích thước 70x130, căn đáy theo anchor
+        cfg.drawW = T_DRAW_W; cfg.drawH = T_DRAW_H; cfg.anchorBottomToPosY = T_ANCHOR_BOTTOM_TO_POSY;
+
+        // Tắt unit
+        cfg.enableUnit = false;
+
+        // Files + frames
+        cfg.baseIdleFile = T_BASE_IDLE; cfg.baseIdleFrames = T_BASE_IDLE_FR; cfg.baseIdleFPSec = T_BASE_IDLE_SEC;
+        cfg.baseUpgrade1File = T_BASE_UPG_1; cfg.baseUpgrade1Frames = T_UPG1_FR; cfg.baseUpgrade1FPSec = T_UPG1_SEC;
+        cfg.baseUpgrade2File = T_BASE_UPG_2; cfg.baseUpgrade2Frames = T_UPG2_FR; cfg.baseUpgrade2FPSec = T_UPG2_SEC;
+
+        for (Tower t : world.towers) {
+            if (!towerVisuals.containsKey(t)) {
+                TowerVisual v = TowerVisual.fromConfig(cfg);
+                towerVisuals.put(t, v);
+                v.triggerPlaceUpgrade();
+            }
+        }
+        Set<Tower> tr = new HashSet<>();
+        for (Tower t : towerVisuals.keys()) if (!world.towers.contains(t, true)) tr.add(t);
+        for (Tower t : tr) { var v = towerVisuals.remove(t); if (v != null) v.dispose(); }
+    }
+
+    private TowerSpot findHoverSpot(float x, float y) {
+        for (TowerSpot s : world.towerSpots) if (s.contains(x, y) && !s.used) return s;
+        return null;
+    }
+
+    @Override
+    public boolean keyDown(int keycode) {
+        if (keycode == Input.Keys.F1) debugRanges = !debugRanges;
+        else if (keycode == Input.Keys.F2) debugSpots = !debugSpots;
+        else if (keycode == Input.Keys.F3) debugPathLines = !debugPathLines;
+        else if (keycode == Input.Keys.F4) onlySelectedTowerRange = !onlySelectedTowerRange;
+        return false;
+    }
+
+    @Override
+    public boolean touchDown(int screenX, int screenY, int pointer, int button) {
+        viewport.unproject(mouseWorld.set(screenX, screenY));
+
+        if (world.gameOver) {
+            world.reset();
+            applyLoadedPath();
+            hud.selectEnemy(null);
+            hud.selectTower(null);
+            selectedTower = null;
+            selectedEnemy = null;
+
+            // clear visuals & state
+            for (ObjectMap.Entry<Enemy, EnemyVisual> e : enemyVisuals.entries()) e.value.dispose();
+            enemyVisuals.clear();
+            for (ObjectMap.Entry<Enemy, EnemyVisual> e : dyingEnemyVisuals.entries()) e.value.dispose();
+            dyingEnemyVisuals.clear();
+            hpScaledEnemies.clear();
+            rewardedEnemies.clear();
+            return true;
+        }
+
+        Tower t = findTowerAt(mouseWorld.x, mouseWorld.y, 18);
+        if (t != null) {
+            selectedTower = (t == selectedTower) ? null : t;
+            selectedEnemy = null;
+            hud.selectEnemy(null);
+            hud.selectTower(selectedTower);
+            return true;
+        }
+
+        Enemy e = findEnemyAt(mouseWorld.x, mouseWorld.y, 16);
+        if (e != null) {
+            selectedEnemy = (e == selectedEnemy) ? null : e;
+            selectedTower = null;
+            hud.selectTower(null);
+            hud.selectEnemy(selectedEnemy);
+            return true;
+        }
+
+        if (!world.waveManager.isInWave()) {
+            if (hoverSpot != null && world.placeTowerOnSpot(hoverSpot)) {
+                // placed
+            }
+        }
+        return true;
+    }
+
+    private Tower findTowerAt(float x, float y, float r) {
+        float r2 = r*r;
+        for (Tower t : world.towers) if (t.pos.dst2(x,y) <= r2) return t;
+        return null;
+    }
+    private Enemy findEnemyAt(float x, float y, float r) {
+        float r2 = r*r;
+        for (Enemy e : world.enemies) if (!e.dead && e.pos.dst2(x,y) <= r2) return e;
+        return null;
+    }
+
+    @Override public void resize(int width, int height) { viewport.update(width, height, true); hud.getStage().getViewport().update(width, height, true); }
+    @Override public void show() {}
+    @Override public void hide() {}
+    @Override public void pause() {}
+    @Override public void resume() {}
+    @Override public void dispose() {
+        if (mapRenderer != null) mapRenderer.dispose();
+        if (tiledMap != null) tiledMap.dispose();
+        for (ObjectMap.Entry<Enemy, EnemyVisual> e : enemyVisuals.entries()) e.value.dispose();
+        enemyVisuals.clear();
+        for (ObjectMap.Entry<Enemy, EnemyVisual> e : dyingEnemyVisuals.entries()) e.value.dispose();
+        dyingEnemyVisuals.clear();
+        for (ObjectMap.Entry<Tower, TowerVisual> t : towerVisuals.entries()) t.value.dispose();
+        towerVisuals.clear();
+        hud.dispose();
+    }
+}
