@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="30" height="17" tilewidth="32" tileheight="32" infinite="0" nextlayerid="13" nextobjectid="22">
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="30" height="17" tilewidth="32" tileheight="32" infinite="0" nextlayerid="15" nextobjectid="22">
  <tileset firstgid="1" name="FieldTileset " tilewidth="32" tileheight="32" tilecount="64" columns="8">
   <image source="FieldsTileset.png" width="256" height="256"/>
  </tileset>
@@ -96,7 +96,7 @@
  </tileset>
  <objectgroup id="4" name="Path" opacity="0">
   <object id="21" x="193.75" y="13">
-   <polyline points="0,0 0,114 575.499,116 575.499,275 -94.7529,275 -95.7503,401 670.252,402 671.25,529"/>
+   <polyline points="0,0 0,107 575.499,111 575.499,269 -81.7529,266 -83.7503,395 670.252,395 671.25,529"/>
   </object>
  </objectgroup>
  <objectgroup id="5" name="TowerSpots" opacity="0">
