@@ -34,6 +34,7 @@ public class Assets {
         if (Gdx.files.internal("background.png").exists()) {
             manager.load("background.png", Texture.class);
         }
+        manager.load("font/font-small.fnt", BitmapFont.class); // thêm dòng này
     }
 
     public boolean update() {
@@ -53,20 +54,23 @@ public class Assets {
         if (manager.isLoaded("background.png")) {
             backgroundTex = manager.get("background.png", Texture.class);
         }
-
         setLinear(enemyTex);
         setLinear(towerTex);
         setLinear(bulletTex);
         setLinear(backgroundTex);
 
-        // Fonts fallback (giống bản cũ – nếu bạn có Roboto và muốn FreeType sẽ bật sau)
-        fontSmall  = new BitmapFont();
-        fontMedium = new BitmapFont();
+        // Load font bitmap nếu có, nếu không thì fallback mặc định
+        if (manager.isLoaded("font/font-small.fnt")) {
+            fontSmall  = manager.get("font/font-small.fnt", BitmapFont.class);
+            fontMedium = fontSmall; // hoặc load thêm font khác nếu muốn
+        } else {
+            fontSmall  = new BitmapFont();
+            fontMedium = new BitmapFont();
+        }
 
         createWhitePixel();
         shapeRenderer = new ShapeRenderer();
     }
-
     private Texture safeGet(String name) {
         return manager.isLoaded(name) ? manager.get(name, Texture.class) : null;
     }

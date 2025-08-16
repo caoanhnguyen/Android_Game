@@ -8,14 +8,14 @@ import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.maps.MapLayer;
+import com.badlogic.gdx.maps.MapLayers;
+import com.badlogic.gdx.maps.tiled.TiledMap;
+import com.badlogic.gdx.maps.tiled.TmxMapLoader;
+import com.badlogic.gdx.maps.tiled.tiles.AnimatedTiledMapTile;
+import com.mygdx.td.render.OrderedOrthogonalTiledMapRenderer;
 import com.badlogic.gdx.maps.MapObject;
 import com.badlogic.gdx.maps.objects.PolylineMapObject;
 import com.badlogic.gdx.maps.objects.RectangleMapObject;
-import com.badlogic.gdx.maps.tiled.TiledMap;
-import com.badlogic.gdx.maps.tiled.TiledMapTileLayer;
-import com.badlogic.gdx.maps.tiled.TmxMapLoader;
-import com.badlogic.gdx.maps.tiled.renderers.OrthogonalTiledMapRenderer;
-import com.badlogic.gdx.maps.tiled.tiles.AnimatedTiledMapTile;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
@@ -33,16 +33,9 @@ import com.mygdx.td.ui.UIHud;
 import com.mygdx.td.world.TowerSpot;
 import com.mygdx.td.world.World;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 
-/**
- * Bản này:
- * - Thanh máu enemy có độ dài cố định (không dài ra theo round).
- * - Enemy trâu dần theo round bằng cách nhân HP theo wave (không sửa Enemy).
- * - Phục hồi cơ chế cộng vàng khi enemy chết (một lần duy nhất mỗi enemy).
- */
 public class GameScreen extends InputAdapter implements Screen {
 
     private final TDGame game;
@@ -51,14 +44,18 @@ public class GameScreen extends InputAdapter implements Screen {
     private final World world;
 
     private TiledMap tiledMap;
-    private OrthogonalTiledMapRenderer mapRenderer;
-    private int[] belowLayerIndices = null;
-    private int[] aboveLayerIndices = null;
+    private OrderedOrthogonalTiledMapRenderer mapRenderer;
+    private final Array<MapLayer> flatLayers = new Array<>();
+
+    // Đặt tên đúng với layer trong Tiled
+    private static final String PROPS_BELOW = "PropsBelow";
+    private static final String PROPS_ABOVE = "PropsAbove";
+    private static final String ANIMATIONS  = "Animations";
 
     private final Array<Vector2> loadedWaypoints = new Array<>();
     private static final String MAP_PATH = "maps/level1.tmx";
 
-    // Enemy strips (điền đúng tên file bạn đang dùng)
+    // Enemy strips
     private static final String ENEMY_BASE = "enemies/wizard";
     private static final String E_WALK_SIDE = "S_Run.png";
     private static final String E_WALK_DOWN = "D_Run.png";
@@ -68,7 +65,6 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final String E_DEATH_UP     = "U_Death.png";
     private static final String E_DEATH_GENERIC= null;
 
-    // Kích thước 1 frame của strip kẻ địch
     private static final int E_FRAME_W = 96;
     private static final int E_FRAME_H = 96;
     private static final int E_SPACING_X = 0, E_MARGIN_X = 0, E_MARGIN_Y = 0;
@@ -79,21 +75,18 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float ENEMY_TILE_SIZE  = 64f;
     private static final boolean ENEMY_BASE_FACES_RIGHT = false;
 
-    // Thanh máu cố định (không đổi theo round)
-    private static final float HP_BAR_WIDTH_FIXED = 40f;  // độ dài cố định
-    private static final float HP_BAR_HEIGHT      = 6f;   // chiều cao cố định
-    private static final float HP_BAR_Y_OFFSET    = 38f;  // đẩy lên trên đầu enemy
+    private static final float HP_BAR_WIDTH_FIXED = 40f;
+    private static final float HP_BAR_HEIGHT      = 6f;
+    private static final float HP_BAR_Y_OFFSET    = 38f;
 
-    // Cơ chế “trâu dần” theo round (HP multiplier mỗi wave)
     private static final boolean ENABLE_WAVE_HP_SCALING = true;
-    private static final float   HP_MULTIPLIER_PER_WAVE = 1.12f; // mỗi wave HP *= 1.12 (12%)
+    private static final float   HP_MULTIPLIER_PER_WAVE = 1.12f;
     private final Set<Enemy> hpScaledEnemies = new HashSet<>();
 
-    // Cộng vàng khi giết enemy
-    private static final int GOLD_PER_KILL = 5;            // chỉnh nếu cần
-    private final Set<Enemy> rewardedEnemies = new HashSet<>(); // đánh dấu đã trả vàng
+    private static final int GOLD_PER_KILL = 5;
+    private final Set<Enemy> rewardedEnemies = new HashSet<>();
 
-    // Tower assets (giữ base như bạn dùng; unit trên tower đang tắt trong TowerVisual.Config)
+    // Tower assets
     private static final String TOWER_BASE_FOLDER = "towers/wood";
     private static final String T_BASE_IDLE   = "B_Idle.png";
     private static final String T_BASE_UPG_1  = "B_Upgrade1.png";
@@ -101,8 +94,6 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final int    T_BASE_IDLE_FR = 4; private static final float  T_BASE_IDLE_SEC = 0.12f;
     private static final int    T_UPG1_FR = 4;      private static final float  T_UPG1_SEC = 0.10f;
     private static final int    T_UPG2_FR = 4;      private static final float  T_UPG2_SEC = 0.10f;
-
-    // Base strip tower: 280x130/4 -> frame 70x130, vẽ đúng size này
     private static final int   T_BASE_FRAME_W = 70, T_BASE_FRAME_H = 130;
     private static final int   T_BASE_SPACING_X = 0, T_BASE_MARGIN_X = 0, T_BASE_MARGIN_Y = 0;
     private static final int   T_DRAW_W = 70, T_DRAW_H = 130;
@@ -149,8 +140,8 @@ public class GameScreen extends InputAdapter implements Screen {
     private void loadMap() {
         try {
             tiledMap = new TmxMapLoader().load(MAP_PATH);
-            mapRenderer = new OrthogonalTiledMapRenderer(tiledMap, 1f);
-            buildLayerBatches();
+            mapRenderer = new OrderedOrthogonalTiledMapRenderer(tiledMap, 1f);
+            flattenLayers();
             extractPath();
             extractTowerSpots();
         } catch (Exception e) {
@@ -158,32 +149,85 @@ public class GameScreen extends InputAdapter implements Screen {
         }
     }
 
-    private void buildLayerBatches() {
-        if (tiledMap == null) return;
-        ArrayList<Integer> below = new ArrayList<>();
-        ArrayList<Integer> above = new ArrayList<>();
-        for (int i = 0; i < tiledMap.getLayers().size(); i++) {
-            var layer = tiledMap.getLayers().get(i);
-            if (!(layer instanceof TiledMapTileLayer)) continue;
-            String n = (layer.getName() == null ? "" : layer.getName().toLowerCase());
-            boolean isAbove = n.contains("above") || n.contains("over") || n.contains("overlay") || n.contains("fg") || n.contains("foreground");
-            if (isAbove) above.add(i); else below.add(i);
+    private void flattenLayers() {
+        flatLayers.clear();
+        MapLayers layers = tiledMap.getLayers();
+        for (int i = 0; i < layers.size(); i++) {
+            MapLayer l = layers.get(i);
+            flatLayers.add(l);
         }
-        belowLayerIndices = below.stream().mapToInt(Integer::intValue).toArray();
-        aboveLayerIndices = above.stream().mapToInt(Integer::intValue).toArray();
     }
 
-    private void renderMapBelow() {
-        if (mapRenderer != null) {
-            mapRenderer.setView(camera);
-            if (belowLayerIndices != null && belowLayerIndices.length > 0) mapRenderer.render(belowLayerIndices);
+    // Render đúng thứ tự: PropsBelow -> Enemy -> PropsAbove -> Tower -> Animations
+    private void renderAllLayersWithActors() {
+        mapRenderer.setView(camera);
+
+        int idxBelow = findLayerIndex(PROPS_BELOW);
+        int idxAbove = findLayerIndex(PROPS_ABOVE);
+        int idxAnim  = findLayerIndex(ANIMATIONS);
+
+        if (idxBelow < 0) idxBelow = 0;
+        if (idxAbove < 0) idxAbove = idxBelow; // nếu không có, merge với below
+        if (idxAnim  < 0) idxAnim = flatLayers.size - 1; // nếu không có, lấy cuối
+
+        // 1. Render từ 0 đến idxBelow (nền, path, PropsBelow)
+        mapRenderer.beginCustom();
+        for (int i = 0; i <= idxBelow; i++)
+            mapRenderer.renderLayer(flatLayers.get(i));
+        mapRenderer.endCustom();
+
+        // 2. Vẽ enemy (bị PropsAbove che nếu có)
+        game.batch.setProjectionMatrix(camera.combined);
+        game.batch.begin();
+        for (Enemy e : world.enemies) {
+            EnemyVisual v = enemyVisuals.get(e);
+            if (v != null) v.draw(game.batch, e);
         }
+        for (ObjectMap.Entry<Enemy, EnemyVisual> entry : dyingEnemyVisuals.entries()) {
+            entry.value.draw(game.batch, entry.key);
+        }
+        // Vẽ bullet (nằm trên enemy)
+        for (Bullet b : world.bullets) {
+            game.batch.draw(game.assets.bulletTex, b.pos.x - 4, b.pos.y - 4, 16, 16);
+        }
+        game.batch.end();
+
+        // 3. Render từ idxBelow+1 đến idxAbove (PropsAbove, Decor, v.v.)
+        mapRenderer.beginCustom();
+        for (int i = idxBelow + 1; i <= idxAbove; i++)
+            mapRenderer.renderLayer(flatLayers.get(i));
+        mapRenderer.endCustom();
+
+        // 4. Vẽ tower (đè lên PropsAbove, chỉ bị Animations che)
+        game.batch.setProjectionMatrix(camera.combined);
+        game.batch.begin();
+        for (Tower t : world.towers) {
+            TowerVisual v = towerVisuals.get(t);
+            if (v != null) v.draw(game.batch, t);
+        }
+        game.batch.end();
+
+        // 5. Render từ idxAbove+1 đến idxAnim (các layer phụ, nếu có)
+        mapRenderer.beginCustom();
+        for (int i = idxAbove + 1; i <= idxAnim; i++)
+            mapRenderer.renderLayer(flatLayers.get(i));
+        mapRenderer.endCustom();
+
+        // 6. Render các layer còn lại (Animations, hiệu ứng, v.v.)
+        mapRenderer.beginCustom();
+        for (int i = idxAnim + 1; i < flatLayers.size; i++)
+            mapRenderer.renderLayer(flatLayers.get(i));
+        mapRenderer.endCustom();
     }
-    private void renderMapAbove() {
-        if (mapRenderer != null) {
-            mapRenderer.setView(camera);
-            if (aboveLayerIndices != null && aboveLayerIndices.length > 0) mapRenderer.render(aboveLayerIndices);
+
+    private int findLayerIndex(String name) {
+        for (int i = 0; i < flatLayers.size; i++) {
+            if (flatLayers.get(i).getName() != null &&
+                flatLayers.get(i).getName().equalsIgnoreCase(name)) {
+                return i;
+            }
         }
+        return -1;
     }
 
     private void extractPath() {
@@ -227,57 +271,23 @@ public class GameScreen extends InputAdapter implements Screen {
         camera.update();
         AnimatedTiledMapTile.updateAnimationBaseTime();
 
-        // Map dưới
-        renderMapBelow();
+        renderAllLayersWithActors();
 
-        // Actors
+        // Draw HP bars (separate batch)
         game.batch.setProjectionMatrix(camera.combined);
-        game.batch.begin();
-
-        // Towers
-        for (Tower t : world.towers) {
-            TowerVisual v = towerVisuals.get(t);
-            if (v != null) v.draw(game.batch, t);
-        }
-
-        // Enemies sống
-        for (Enemy e : world.enemies) {
-            EnemyVisual v = enemyVisuals.get(e);
-            if (v != null) v.draw(game.batch, e);
-        }
-        // Enemies dying (đã remove khỏi world nhưng còn anim)
-        for (ObjectMap.Entry<Enemy, EnemyVisual> entry : dyingEnemyVisuals.entries()) {
-            entry.value.draw(game.batch, entry.key);
-        }
-
-        // Bullets
-        for (Bullet b : world.bullets) {
-            game.batch.draw(game.assets.bulletTex, b.pos.x - 4, b.pos.y - 4, 8, 8);
-        }
-
-        game.batch.end();
-
-        // Map trên (overlay)
-        renderMapAbove();
-
-        // HP bars cố định
         game.batch.begin();
         for (Enemy e : world.enemies) {
             if (e.dead) continue;
             float pctRaw = e.getHpPercent();
             float pct = Math.max(0f, Math.min(1f, pctRaw));
-
             float bw = HP_BAR_WIDTH_FIXED, bh = HP_BAR_HEIGHT;
             float bx = e.pos.x - bw / 2f;
             float by = e.pos.y + HP_BAR_Y_OFFSET;
 
-            // nền
             game.batch.setColor(0, 0, 0, 0.6f);
             game.batch.draw(game.assets.whitePixel, bx, by, bw, bh);
-            // phần đầy theo % máu
             game.batch.setColor(0, 1, 0, 1);
             game.batch.draw(game.assets.whitePixel, bx, by, bw * pct, bh);
-            // reset
             game.batch.setColor(1, 1, 1, 1);
         }
         game.batch.end();
@@ -293,13 +303,8 @@ public class GameScreen extends InputAdapter implements Screen {
         if (!world.gameOver) {
             world.update(dt);
 
-            // 1) Cộng vàng ngay khi enemy chuyển sang dead (một lần duy nhất mỗi enemy)
             applyKillRewards();
-
-            // 2) Scale HP theo wave cho enemy mới spawn
             applyWaveHpScaling();
-
-            // 3) Visuals
             syncEnemyVisuals();
             syncTowerVisuals();
             updateEnemyVisuals(dt);
@@ -314,11 +319,10 @@ public class GameScreen extends InputAdapter implements Screen {
     private void applyKillRewards() {
         for (Enemy e : world.enemies) {
             if (e.isDead() && !rewardedEnemies.contains(e)) {
-                world.gold += GOLD_PER_KILL;  // nếu World có addGold(int) thì đổi sang dùng API đó
+                world.gold += GOLD_PER_KILL;
                 rewardedEnemies.add(e);
             }
         }
-        // Dọn set theo danh sách hiện có để không giữ tham chiếu thừa
         rewardedEnemies.removeIf(e -> !world.enemies.contains(e, true));
     }
 
@@ -326,21 +330,16 @@ public class GameScreen extends InputAdapter implements Screen {
         if (!ENABLE_WAVE_HP_SCALING) return;
         int waveIndex = 1;
         try {
-            waveIndex = Math.max(1, world.waveManager.getCurrentWave()); // nếu method khác, đổi lại cho đúng code của bạn
-        } catch (Throwable ignored) {
-            waveIndex = 1;
-        }
+            waveIndex = Math.max(1, world.waveManager.getCurrentWave());
+        } catch (Throwable ignored) { waveIndex = 1; }
         if (waveIndex <= 1) return;
-
         float mul = (float) Math.pow(HP_MULTIPLIER_PER_WAVE, waveIndex - 1);
-
         for (Enemy e : world.enemies) {
             if (hpScaledEnemies.contains(e)) continue;
             e.maxHp *= mul;
             e.hp    *= mul;
             hpScaledEnemies.add(e);
         }
-        // dọn set các enemy đã biến mất
         hpScaledEnemies.removeIf(e -> !world.enemies.contains(e, true));
     }
 
@@ -351,11 +350,9 @@ public class GameScreen extends InputAdapter implements Screen {
     }
 
     private void updateEnemyVisuals(float dt) {
-        // Enemies sống
         for (ObjectMap.Entry<Enemy, EnemyVisual> entry : enemyVisuals.entries()) {
             entry.value.update(entry.key, dt);
         }
-        // Enemies dying
         Set<Enemy> toRemove = new HashSet<>();
         for (ObjectMap.Entry<Enemy, EnemyVisual> entry : dyingEnemyVisuals.entries()) {
             entry.value.update(entry.key, dt);
@@ -368,23 +365,18 @@ public class GameScreen extends InputAdapter implements Screen {
     }
 
     private void syncEnemyVisuals() {
-        // Add visuals
         for (Enemy e : world.enemies) {
             if (!enemyVisuals.containsKey(e)) {
                 EnemyVisual v = EnemyVisual.fromStripsFixed(
-                    ENEMY_BASE,
-                    E_WALK_SIDE, E_WALK_DOWN, E_WALK_UP,
+                    ENEMY_BASE, E_WALK_SIDE, E_WALK_DOWN, E_WALK_UP,
                     E_DEATH_SIDE, E_DEATH_DOWN, E_DEATH_UP, E_DEATH_GENERIC,
-                    E_FRAME_W, E_FRAME_H,
-                    E_FRAMES_WALK, E_WALK_SEC,
-                    E_FRAMES_DEATH, E_DEATH_SEC,
-                    E_SPACING_X, E_MARGIN_X, E_MARGIN_Y,
+                    E_FRAME_W, E_FRAME_H, E_FRAMES_WALK, E_WALK_SEC,
+                    E_FRAMES_DEATH, E_DEATH_SEC, E_SPACING_X, E_MARGIN_X, E_MARGIN_Y,
                     ENEMY_TILE_SIZE, ENEMY_BASE_FACES_RIGHT
                 );
                 enemyVisuals.put(e, v);
             }
         }
-        // Move removed enemies to dying list (to finish death anim)
         Set<Enemy> toMove = new HashSet<>();
         for (Enemy e : enemyVisuals.keys()) if (!world.enemies.contains(e, true)) toMove.add(e);
         for (Enemy e : toMove) {
@@ -399,18 +391,10 @@ public class GameScreen extends InputAdapter implements Screen {
     private void syncTowerVisuals() {
         TowerVisual.Config cfg = new TowerVisual.Config();
         cfg.baseFolder = TOWER_BASE_FOLDER;
-
-        // Base cut
         cfg.baseFrameW = T_BASE_FRAME_W; cfg.baseFrameH = T_BASE_FRAME_H;
         cfg.baseSpacingX = T_BASE_SPACING_X; cfg.baseMarginX = T_BASE_MARGIN_X; cfg.baseMarginY = T_BASE_MARGIN_Y;
-
-        // Vẽ tower đúng kích thước 70x130, căn đáy theo anchor
         cfg.drawW = T_DRAW_W; cfg.drawH = T_DRAW_H; cfg.anchorBottomToPosY = T_ANCHOR_BOTTOM_TO_POSY;
-
-        // Tắt unit
         cfg.enableUnit = false;
-
-        // Files + frames
         cfg.baseIdleFile = T_BASE_IDLE; cfg.baseIdleFrames = T_BASE_IDLE_FR; cfg.baseIdleFPSec = T_BASE_IDLE_SEC;
         cfg.baseUpgrade1File = T_BASE_UPG_1; cfg.baseUpgrade1Frames = T_UPG1_FR; cfg.baseUpgrade1FPSec = T_UPG1_SEC;
         cfg.baseUpgrade2File = T_BASE_UPG_2; cfg.baseUpgrade2Frames = T_UPG2_FR; cfg.baseUpgrade2FPSec = T_UPG2_SEC;
@@ -453,7 +437,6 @@ public class GameScreen extends InputAdapter implements Screen {
             selectedTower = null;
             selectedEnemy = null;
 
-            // clear visuals & state
             for (ObjectMap.Entry<Enemy, EnemyVisual> e : enemyVisuals.entries()) e.value.dispose();
             enemyVisuals.clear();
             for (ObjectMap.Entry<Enemy, EnemyVisual> e : dyingEnemyVisuals.entries()) e.value.dispose();

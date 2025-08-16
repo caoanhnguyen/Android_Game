@@ -96,6 +96,11 @@ public class UIHud {
     }
 
     private Skin buildBasicSkin(Assets assets) {
+        // Check asset đã load xong chưa
+        if (assets.fontSmall == null)
+            throw new IllegalStateException("fontSmall chưa load xong!");
+        if (assets.getWhiteRegion() == null)
+            throw new IllegalStateException("WhiteRegion chưa load xong!");
         Skin s = new Skin();
         s.add("default-font", assets.fontSmall);
         Label.LabelStyle ls = new Label.LabelStyle();
