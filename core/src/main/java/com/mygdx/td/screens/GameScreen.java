@@ -265,7 +265,7 @@ public class GameScreen extends InputAdapter implements Screen {
         update(delta);
 
         Gdx.gl.glClearColor(0.05f, 0.05f, 0.08f, 1f);
-        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT); // xóa màn hình bằng màu xanh đậm
 
         camera.update();
         AnimatedTiledMapTile.updateAnimationBaseTime();
@@ -295,17 +295,6 @@ public class GameScreen extends InputAdapter implements Screen {
         hud.act(delta);
         hud.updateHudValues(world.waveManager.isInWave());
         hud.draw();
-
-        // --- Vẽ khung debug TowerSpot ---
-        ShapeRenderer shapeRenderer = new ShapeRenderer();
-        shapeRenderer.setProjectionMatrix(camera.combined);
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-        shapeRenderer.setColor(1, 0, 0, 1);
-        for (TowerSpot s : world.towerSpots) {
-            shapeRenderer.rect(s.rect.x, s.rect.y, s.rect.width, s.rect.height);
-        }
-        shapeRenderer.end();
-        shapeRenderer.dispose();
     }
 
     private void update(float dt) {

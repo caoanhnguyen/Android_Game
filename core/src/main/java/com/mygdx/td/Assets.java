@@ -6,77 +6,134 @@ import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
-import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 
 /**
- * Phiên bản đơn giản: chỉ load texture cơ bản giống bản cũ + tạo whitePixel & shapeRenderer.
- * KHÔNG dùng FreeType để tránh lỗi native nếu chưa cấu hình gdx-freetype.
+ * Quản lý toàn bộ asset.
+ * LƯU Ý: .fnt phải load bằng BitmapFont.class, không phải Texture.class.
  */
 public class Assets {
     public final AssetManager manager = new AssetManager();
 
+    // Gameplay
     public Texture enemyTex;
     public Texture towerTex;
     public Texture bulletTex;
-    public Texture backgroundTex;
+    public Texture backgroundTex; // gameplay background (nếu có)
 
+    // UI
+    public Texture btnUp;
+    public Texture btnOver;
+    public Texture btnDown;
+    public Texture logoTex;
+    public Texture musicOn;
+    public Texture musicOff;
+    public Texture soundOn;
+    public Texture soundOff;
+    public Texture menuBg; // ui/background.jpg (background menu)
+
+    // Fonts
     public BitmapFont fontSmall;
     public BitmapFont fontMedium;
 
-    // tiện cho HUD & debug
+    // Utility
     public Texture whitePixel;
-    public ShapeRenderer shapeRenderer;
 
     public void loadAllAsync() {
-        manager.load("enemy.png", Texture.class);
-        manager.load("tower.png", Texture.class);
-        manager.load("bullet.png", Texture.class);
-        if (Gdx.files.internal("background.png").exists()) {
-            manager.load("background.png", Texture.class);
+        // Gameplay textures
+        safeLoadTexture("enemy.png");
+        safeLoadTexture("tower.png");
+        safeLoadTexture("bullet.png");
+        safeLoadTexture("background.png"); // optional
+
+        // UI textures
+        safeLoadTexture("ui/button_up.png");
+        safeLoadTexture("ui/button_over.png");
+        safeLoadTexture("ui/button_down.png");
+        safeLoadTexture("ui/logo.png");
+        safeLoadTexture("ui/music_on.png");
+        safeLoadTexture("ui/music_off.png");
+        safeLoadTexture("ui/sound_on.png");
+        safeLoadTexture("ui/sound_off.png");
+        safeLoadTexture("ui/background.jpg"); // menu background
+
+        // Fonts (.fnt)
+        safeLoadFont("font/font-small.fnt");
+        // Nếu sau này có thêm font khác thì thêm dòng tương tự.
+    }
+
+    private void safeLoadTexture(String path) {
+        if (Gdx.files.internal(path).exists()) {
+            manager.load(path, Texture.class);
+        } else {
+            Gdx.app.error("ASSETS", "Không tìm thấy file texture: " + path);
         }
-        manager.load("font/font-small.fnt", BitmapFont.class); // thêm dòng này
     }
 
-    public boolean update() {
-        return manager.update();
+    private void safeLoadFont(String path) {
+        if (Gdx.files.internal(path).exists()) {
+            manager.load(path, BitmapFont.class);
+        } else {
+            Gdx.app.error("ASSETS", "Không tìm thấy file font: " + path);
+        }
     }
 
-    public float getProgress() {
-        return manager.getProgress();
-    }
+    public boolean update() { return manager.update(); }
+    public float getProgress() { return manager.getProgress(); }
 
     public void finishLoading() {
         manager.finishLoading();
 
-        enemyTex  = safeGet("enemy.png");
-        towerTex  = safeGet("tower.png");
-        bulletTex = safeGet("bullet.png");
-        if (manager.isLoaded("background.png")) {
-            backgroundTex = manager.get("background.png", Texture.class);
-        }
-        setLinear(enemyTex);
-        setLinear(towerTex);
-        setLinear(bulletTex);
-        setLinear(backgroundTex);
+        enemyTex      = getTex("enemy.png");
+        towerTex      = getTex("tower.png");
+        bulletTex     = getTex("bullet.png");
+        backgroundTex = getTex("background.png");
 
-        // Load font bitmap nếu có, nếu không thì fallback mặc định
+        btnUp    = getTex("ui/button_up.png");
+        btnOver  = getTex("ui/button_over.png");
+        btnDown  = getTex("ui/button_down.png");
+        logoTex  = getTex("ui/logo.png");
+        musicOn  = getTex("ui/music_on.png");
+        musicOff = getTex("ui/music_off.png");
+        soundOn  = getTex("ui/sound_on.png");
+        soundOff = getTex("ui/sound_off.png");
+        menuBg   = getTex("ui/background.jpg");
+
+        if (menuBg == null) {
+            Gdx.app.error("ASSETS", "menuBg NULL - kiểm tra tên file: ui/background.jpg");
+        }
+
+        applyFilters();
+
         if (manager.isLoaded("font/font-small.fnt")) {
             fontSmall  = manager.get("font/font-small.fnt", BitmapFont.class);
-            fontMedium = fontSmall; // hoặc load thêm font khác nếu muốn
+            fontMedium = fontSmall;
         } else {
-            fontSmall  = new BitmapFont();
-            fontMedium = new BitmapFont();
+            // fallback nếu không có font
+            fontSmall = new BitmapFont();
+            fontMedium = fontSmall;
         }
 
         createWhitePixel();
-        shapeRenderer = new ShapeRenderer();
-    }
-    private Texture safeGet(String name) {
-        return manager.isLoaded(name) ? manager.get(name, Texture.class) : null;
     }
 
-    private void setLinear(Texture t) {
-        if (t != null) t.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+    private Texture getTex(String path) {
+        return manager.isLoaded(path) ? manager.get(path, Texture.class) : null;
+    }
+
+    private void applyFilters() {
+        // Pixel art nhỏ (icon) dùng Nearest để phóng không mờ
+        Texture[] pixelIcons = { musicOn, musicOff, soundOn, soundOff };
+        for (Texture t : pixelIcons) {
+            if (t != null) t.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        }
+
+        Texture[] linearList = {
+            enemyTex, towerTex, bulletTex, backgroundTex,
+            btnUp, btnOver, btnDown, logoTex, menuBg
+        };
+        for (Texture t : linearList) {
+            if (t != null) t.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+        }
     }
 
     private void createWhitePixel() {
@@ -87,15 +144,15 @@ public class Assets {
         pm.dispose();
     }
 
+
     public TextureRegion getWhiteRegion() {
         return whitePixel == null ? null : new TextureRegion(whitePixel);
     }
 
     public void dispose() {
         if (whitePixel != null) whitePixel.dispose();
-        if (shapeRenderer != null) shapeRenderer.dispose();
-        if (fontSmall != null)  fontSmall.dispose();
-        if (fontMedium != null) fontMedium.dispose();
+        if (fontSmall != null) fontSmall.dispose();
+        if (fontMedium != null && fontMedium != fontSmall) fontMedium.dispose();
         manager.dispose();
     }
 }
