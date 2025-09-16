@@ -1,0 +1,8 @@
+knob.png
+size: 16, 32
+format: RGBA8888
+filter: Linear, Linear
+repeat: none
+pma: false
+knob
+  bounds: 0, 0, 16, 32

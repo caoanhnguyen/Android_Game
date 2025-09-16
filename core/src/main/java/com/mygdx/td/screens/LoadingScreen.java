@@ -26,6 +26,7 @@ public class LoadingScreen implements Screen {
     private Texture barBgTex;
     private Texture barFillTex;
 
+    // Đổi: dùng font title bitmap
     private BitmapFont font;
     private final GlyphLayout layout = new GlyphLayout();
 
@@ -46,12 +47,11 @@ public class LoadingScreen implements Screen {
         camera.update();
 
         loadImmediateAssets();
-        createTemporaryFont();
+        loadFontTitle();
         createProgressBarTextures();
     }
 
     private void loadImmediateAssets() {
-        // Thử nhiều đường dẫn — lấy cái đầu tiên tồn tại
         String[] candidates = {
             "ui/background.jpg",
             "ui/background.png",
@@ -72,22 +72,27 @@ public class LoadingScreen implements Screen {
         }
     }
 
-    private void createTemporaryFont() {
-        // Dùng BitmapFont mặc định phóng to tạm
-        font = new BitmapFont();
-        font.setUseIntegerPositions(false);
-        font.getData().setScale(2.2f); // chữ lớn
+    // Thay thế font tạm bằng font title đẹp
+    private void loadFontTitle() {
+        try {
+            font = new BitmapFont(Gdx.files.internal("font/font_title.fnt"));
+            font.setUseIntegerPositions(false); // Cho phép float vị trí, tránh rung chữ
+            font.setColor(Color.WHITE);
+        } catch (Exception e) {
+            Gdx.app.error("LoadingScreen", "Không load được font_title.fnt, fallback font mặc định", e);
+            font = new BitmapFont();
+            font.setUseIntegerPositions(false);
+            font.getData().setScale(2.2f);
+        }
     }
 
     private void createProgressBarTextures() {
-        // Nền thanh (xám đậm)
         Pixmap pmBg = new Pixmap(4, 4, Pixmap.Format.RGBA8888);
         pmBg.setColor(0f, 0f, 0f, 0.55f);
         pmBg.fill();
         barBgTex = new Texture(pmBg);
         pmBg.dispose();
 
-        // Fill (vàng / cam)
         Pixmap pmFill = new Pixmap(4, 4, Pixmap.Format.RGBA8888);
         pmFill.setColor(1f, 0.78f, 0.15f, 1f);
         pmFill.fill();
@@ -97,17 +102,14 @@ public class LoadingScreen implements Screen {
 
     @Override
     public void render(float delta) {
-        // Cập nhật asset manager
         boolean finished = game.assets.update();
-        float targetProgress = game.assets.getProgress(); // 0..1
+        float targetProgress = game.assets.getProgress();
 
-        // Lerp mượt
         displayedProgress += (targetProgress - displayedProgress) * Math.min(1f, delta * 8f);
 
         if (finished) {
             minShowTime -= delta;
             if (minShowTime <= 0f) {
-                // Kết thúc: finalize assets và chuyển screen
                 Gdx.app.log("LoadingScreen", "Assets loaded 100%");
                 game.assets.finishLoading();
                 game.onAssetsLoaded();
@@ -115,7 +117,6 @@ public class LoadingScreen implements Screen {
             }
         }
 
-        // Vẽ
         Gdx.gl.glClearColor(0, 0, 0, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
@@ -130,13 +131,18 @@ public class LoadingScreen implements Screen {
     }
 
     private void drawBackground() {
-        float w = viewport.getWorldWidth();
-        float h = viewport.getWorldHeight();
         if (bgTex != null) {
-            game.batch.draw(bgTex, 0, 0, w, h);
-        } else {
-            // Fallback gradient đơn giản bằng fill 2 lớp
-            // (Tạo texture 1x1 tạm nếu muốn, nhưng ở đây để trống => nền đen)
+            float worldW = viewport.getWorldWidth();
+            float worldH = viewport.getWorldHeight();
+            float imgW = bgTex.getWidth();
+            float imgH = bgTex.getHeight();
+            // Tính scale để luôn phủ kín (cover)
+            float scale = Math.max(worldW / imgW, worldH / imgH);
+            float drawW = imgW * scale;
+            float drawH = imgH * scale;
+            float x = (worldW - drawW) / 2f;
+            float y = (worldH - drawH) / 2f;
+            game.batch.draw(bgTex, x, y, drawW, drawH);
         }
     }
 
@@ -144,7 +150,7 @@ public class LoadingScreen implements Screen {
         String txt = "LOADING " + (int)(displayedProgress * 100) + "%";
         layout.setText(font, txt);
         float x = (viewport.getWorldWidth() - layout.width) / 2f;
-        float y = (viewport.getWorldHeight() / 2f) + 70f; // đặt cao hơn progress bar
+        float y = (viewport.getWorldHeight() / 2f) + 70f;
         font.setColor(Color.WHITE);
         font.draw(game.batch, layout, x, y);
     }
@@ -157,13 +163,11 @@ public class LoadingScreen implements Screen {
         float barX = (vw - barWidth) / 2f;
         float barY = (vh / 2f) - BAR_HEIGHT / 2f;
 
-        // Vẽ nền (border)
         float outerW = barWidth;
         float outerH = BAR_HEIGHT;
         game.batch.setColor(Color.WHITE);
         game.batch.draw(barBgTex, barX, barY, outerW, outerH);
 
-        // Vẽ fill bên trong (trừ border)
         float innerX = barX + BAR_BORDER;
         float innerY = barY + BAR_BORDER;
         float innerW = (outerW - BAR_BORDER * 2f) * progress;
@@ -171,7 +175,6 @@ public class LoadingScreen implements Screen {
 
         game.batch.draw(barFillTex, innerX, innerY, innerW, innerH);
 
-        // Hiệu ứng “gloss” nhẹ (nửa trên mờ)
         game.batch.setColor(1f, 1f, 1f, 0.25f);
         game.batch.draw(barFillTex, innerX, innerY + innerH * 0.55f, innerW, innerH * 0.45f);
         game.batch.setColor(Color.WHITE);

@@ -1,0 +1,18 @@
+metal_buttons_text.png
+size: 196, 68
+format: RGBA8888
+filter: Linear, Linear
+repeat: none
+pma: false
+QUIT_down
+  bounds: 2, 2, 64, 32
+QUIT_over
+  bounds: 66, 2, 64, 32
+QUIT_up
+  bounds: 130, 2, 64, 32
+START_down
+  bounds: 2, 34, 64, 32
+START_over
+  bounds: 66, 34, 64, 32
+START_up
+  bounds: 130, 34, 64, 32

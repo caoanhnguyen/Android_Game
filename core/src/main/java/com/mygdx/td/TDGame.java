@@ -52,6 +52,14 @@ public class TDGame extends Game {
         setScreen(new GameScreen(this));
     }
 
+    /**
+     * Được SelectLevelScreen gọi khi người chơi chọn PLAY với một màn cụ thể.
+     * @param level Level người chơi muốn chơi (ví dụ 1, 2, 3 ...)
+     */
+    public void startGameWithLevel(int level) {
+        setScreen(new GameScreen(this, level));
+    }
+
     @Override
     public void dispose() {
         if (getScreen() != null) getScreen().dispose();

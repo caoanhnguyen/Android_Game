@@ -55,7 +55,7 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final String ANIMATIONS  = "Animations";
 
     private final Array<Vector2> loadedWaypoints = new Array<>();
-    private static final String MAP_PATH = "maps/level1.tmx";
+    private String mapPath = "maps/level1.tmx";
 
     // Enemy strips
     private static final String ENEMY_BASE = "enemies/wizard";
@@ -112,18 +112,27 @@ public class GameScreen extends InputAdapter implements Screen {
     private Enemy selectedEnemy = null;
 
     private final UIHud hud;
+    private boolean gamePaused = false; // Thêm biến này
 
     private boolean debugPathLines = false;
     private boolean debugRanges = true;
     private boolean debugSpots = false;
     private boolean onlySelectedTowerRange = false;
 
+    // ==== Constructor mặc định: load level1 ====
     public GameScreen(TDGame game) {
+        this(game, 1);
+    }
+
+    // ==== Constructor nhận thêm level ====
+    public GameScreen(TDGame game, int level) {
         this.game = game;
         camera = new OrthographicCamera();
         viewport = new StretchViewport(Constants.VIRTUAL_WIDTH, Constants.VIRTUAL_HEIGHT, camera);
 
-        // Đặt camera về gốc dưới-trái của map, đảm bảo map gốc (0,0) trùng với world gốc
+        // Chọn map tương ứng level (mapPath)
+        this.mapPath = getMapPathForLevel(level);
+
         camera.position.set(camera.viewportWidth / 2f, camera.viewportHeight / 2f, 0);
         camera.update();
 
@@ -135,6 +144,11 @@ public class GameScreen extends InputAdapter implements Screen {
         hud.onStartWave = () -> {
             if (!world.waveManager.isInWave() && !world.gameOver) world.waveManager.startNextWave();
         };
+        // Callback cho PAUSE game (chuẩn chiều, lấy trạng thái từ HUD)
+        hud.onPauseToggle = () -> {
+            gamePaused = hud.isPaused(); // đúng chiều: lấy trạng thái từ UIHud
+            Gdx.app.log("GAME", gamePaused ? "Paused" : "Playing");
+        };
 
         InputMultiplexer mux = new InputMultiplexer();
         mux.addProcessor(hud.getStage());
@@ -144,9 +158,15 @@ public class GameScreen extends InputAdapter implements Screen {
         hud.updateHudValues(world.waveManager.isInWave());
     }
 
+    private String getMapPathForLevel(int level) {
+        String candidate = "maps/level" + level + ".tmx";
+        if (Gdx.files.internal(candidate).exists()) return candidate;
+        return "maps/level1.tmx";
+    }
+
     private void loadMap() {
         try {
-            tiledMap = new TmxMapLoader().load(MAP_PATH);
+            tiledMap = new TmxMapLoader().load(mapPath);
             mapRenderer = new OrderedOrthogonalTiledMapRenderer(tiledMap, 1f);
             flattenLayers();
             extractPath();
@@ -262,10 +282,13 @@ public class GameScreen extends InputAdapter implements Screen {
 
     @Override
     public void render(float delta) {
-        update(delta);
+        // Sửa: chỉ update thế giới nếu không bị pause
+        if (!gamePaused) {
+            update(delta);
+        }
 
         Gdx.gl.glClearColor(0.05f, 0.05f, 0.08f, 1f);
-        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT); // xóa màn hình bằng màu xanh đậm
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
         camera.update();
         AnimatedTiledMapTile.updateAnimationBaseTime();
@@ -291,7 +314,7 @@ public class GameScreen extends InputAdapter implements Screen {
         }
         game.batch.end();
 
-        // HUD
+        // HUD vẫn act/update/draw bình thường
         hud.act(delta);
         hud.updateHudValues(world.waveManager.isInWave());
         hud.draw();

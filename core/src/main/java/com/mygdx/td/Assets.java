@@ -54,7 +54,7 @@ public class Assets {
         safeLoadTexture("ui/music_off.png");
         safeLoadTexture("ui/sound_on.png");
         safeLoadTexture("ui/sound_off.png");
-        safeLoadTexture("ui/background.jpg"); // menu background
+        safeLoadTexture("ui/background.png"); // menu background
 
         // Fonts (.fnt)
         safeLoadFont("font/font-small.fnt");
@@ -96,10 +96,10 @@ public class Assets {
         musicOff = getTex("ui/music_off.png");
         soundOn  = getTex("ui/sound_on.png");
         soundOff = getTex("ui/sound_off.png");
-        menuBg   = getTex("ui/background.jpg");
+        menuBg   = getTex("ui/background.png");
 
         if (menuBg == null) {
-            Gdx.app.error("ASSETS", "menuBg NULL - kiểm tra tên file: ui/background.jpg");
+            Gdx.app.error("ASSETS", "menuBg NULL - kiểm tra tên file: ui/background.png");
         }
 
         applyFilters();

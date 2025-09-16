@@ -1,0 +1,36 @@
+orange_buttons_text.png
+size: 192, 160
+format: RGBA8888
+filter: Linear, Linear
+repeat: none
+pma: false
+BACK_down
+  bounds: 0, 0, 64, 32
+BACK_over
+  bounds: 64, 0, 64, 32
+BACK_up
+  bounds: 128, 0, 64, 32
+PLAY_down
+  bounds: 0, 32, 64, 32
+PLAY_over
+  bounds: 64, 32, 64, 32
+PLAY_up
+  bounds: 128, 32, 64, 32
+QUIT_down
+  bounds: 0, 64, 64, 32
+QUIT_over
+  bounds: 64, 64, 64, 32
+QUIT_up
+  bounds: 128, 64, 64, 32
+SAVE_down
+  bounds: 0, 96, 64, 32
+SAVE_over
+  bounds: 64, 96, 64, 32
+SAVE_up
+  bounds: 128, 96, 64, 32
+START_down
+  bounds: 0, 128, 64, 32
+START_over
+  bounds: 64, 128, 64, 32
+START_up
+  bounds: 128, 128, 64, 32

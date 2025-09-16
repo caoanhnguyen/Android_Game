@@ -1,0 +1,306 @@
+orange_icon_buttons.png
+size: 480, 320
+format: RGBA8888
+filter: Linear, Linear
+repeat: none
+pma: false
+row-1-column-1
+  bounds: 0, 0, 32, 32
+row-1-column-2
+  bounds: 32, 0, 32, 32
+row-1-column-3
+  bounds: 64, 0, 32, 32
+row-1-column-4
+  bounds: 96, 0, 32, 32
+row-1-column-5
+  bounds: 128, 0, 32, 32
+row-1-column-6
+  bounds: 160, 0, 32, 32
+row-1-column-7
+  bounds: 192, 0, 32, 32
+row-1-column-8
+  bounds: 224, 0, 32, 32
+row-1-column-9
+  bounds: 256, 0, 32, 32
+row-1-column-10
+  bounds: 288, 0, 32, 32
+row-1-column-11
+  bounds: 320, 0, 32, 32
+row-1-column-12
+  bounds: 352, 0, 32, 32
+row-1-column-13
+  bounds: 384, 0, 32, 32
+row-1-column-14
+  bounds: 416, 0, 32, 32
+row-1-column-15
+  bounds: 448, 0, 32, 32
+row-2-column-1
+  bounds: 0, 32, 32, 32
+row-2-column-2
+  bounds: 32, 32, 32, 32
+row-2-column-3
+  bounds: 64, 32, 32, 32
+row-2-column-4
+  bounds: 96, 32, 32, 32
+row-2-column-5
+  bounds: 128, 32, 32, 32
+row-2-column-6
+  bounds: 160, 32, 32, 32
+row-2-column-7
+  bounds: 192, 32, 32, 32
+row-2-column-8
+  bounds: 224, 32, 32, 32
+row-2-column-9
+  bounds: 256, 32, 32, 32
+row-2-column-10
+  bounds: 288, 32, 32, 32
+row-2-column-11
+  bounds: 320, 32, 32, 32
+row-2-column-12
+  bounds: 352, 32, 32, 32
+row-2-column-13
+  bounds: 384, 32, 32, 32
+row-2-column-14
+  bounds: 416, 32, 32, 32
+row-2-column-15
+  bounds: 448, 32, 32, 32
+row-3-column-1
+  bounds: 0, 64, 32, 32
+row-3-column-2
+  bounds: 32, 64, 32, 32
+row-3-column-3
+  bounds: 64, 64, 32, 32
+row-3-column-4
+  bounds: 96, 64, 32, 32
+row-3-column-5
+  bounds: 128, 64, 32, 32
+row-3-column-6
+  bounds: 160, 64, 32, 32
+row-3-column-7
+  bounds: 192, 64, 32, 32
+row-3-column-8
+  bounds: 224, 64, 32, 32
+row-3-column-9
+  bounds: 256, 64, 32, 32
+row-3-column-10
+  bounds: 288, 64, 32, 32
+row-3-column-11
+  bounds: 320, 64, 32, 32
+row-3-column-12
+  bounds: 352, 64, 32, 32
+row-3-column-13
+  bounds: 384, 64, 32, 32
+row-3-column-14
+  bounds: 416, 64, 32, 32
+row-3-column-15
+  bounds: 448, 64, 32, 32
+row-4-column-1
+  bounds: 0, 96, 32, 32
+row-4-column-2
+  bounds: 32, 96, 32, 32
+row-4-column-3
+  bounds: 64, 96, 32, 32
+row-4-column-4
+  bounds: 96, 96, 32, 32
+row-4-column-5
+  bounds: 128, 96, 32, 32
+row-4-column-6
+  bounds: 160, 96, 32, 32
+row-4-column-7
+  bounds: 192, 96, 32, 32
+row-4-column-8
+  bounds: 224, 96, 32, 32
+row-4-column-9
+  bounds: 256, 96, 32, 32
+row-4-column-10
+  bounds: 288, 96, 32, 32
+row-4-column-11
+  bounds: 320, 96, 32, 32
+row-4-column-12
+  bounds: 352, 96, 32, 32
+row-4-column-13
+  bounds: 384, 96, 32, 32
+row-4-column-14
+  bounds: 416, 96, 32, 32
+row-4-column-15
+  bounds: 448, 96, 32, 32
+row-5-column-1
+  bounds: 0, 128, 32, 32
+row-5-column-2
+  bounds: 32, 128, 32, 32
+row-5-column-3
+  bounds: 64, 128, 32, 32
+row-5-column-4
+  bounds: 96, 128, 32, 32
+row-5-column-5
+  bounds: 128, 128, 32, 32
+row-5-column-6
+  bounds: 160, 128, 32, 32
+row-5-column-7
+  bounds: 192, 128, 32, 32
+row-5-column-8
+  bounds: 224, 128, 32, 32
+row-5-column-9
+  bounds: 256, 128, 32, 32
+row-5-column-10
+  bounds: 288, 128, 32, 32
+row-5-column-11
+  bounds: 320, 128, 32, 32
+row-5-column-12
+  bounds: 352, 128, 32, 32
+row-5-column-13
+  bounds: 384, 128, 32, 32
+row-5-column-14
+  bounds: 416, 128, 32, 32
+row-5-column-15
+  bounds: 448, 128, 32, 32
+row-6-column-1
+  bounds: 0, 160, 32, 32
+row-6-column-2
+  bounds: 32, 160, 32, 32
+row-6-column-3
+  bounds: 64, 160, 32, 32
+row-6-column-4
+  bounds: 96, 160, 32, 32
+row-6-column-5
+  bounds: 128, 160, 32, 32
+row-6-column-6
+  bounds: 160, 160, 32, 32
+row-6-column-7
+  bounds: 192, 160, 32, 32
+row-6-column-8
+  bounds: 224, 160, 32, 32
+row-6-column-9
+  bounds: 256, 160, 32, 32
+row-6-column-10
+  bounds: 288, 160, 32, 32
+row-6-column-11
+  bounds: 320, 160, 32, 32
+row-6-column-12
+  bounds: 352, 160, 32, 32
+row-6-column-13
+  bounds: 384, 160, 32, 32
+row-6-column-14
+  bounds: 416, 160, 32, 32
+row-6-column-15
+  bounds: 448, 160, 32, 32
+row-7-column-1
+  bounds: 0, 192, 32, 32
+row-7-column-2
+  bounds: 32, 192, 32, 32
+row-7-column-3
+  bounds: 64, 192, 32, 32
+row-7-column-4
+  bounds: 96, 192, 32, 32
+row-7-column-5
+  bounds: 128, 192, 32, 32
+row-7-column-6
+  bounds: 160, 192, 32, 32
+row-7-column-7
+  bounds: 192, 192, 32, 32
+row-7-column-8
+  bounds: 224, 192, 32, 32
+row-7-column-9
+  bounds: 256, 192, 32, 32
+row-7-column-10
+  bounds: 288, 192, 32, 32
+row-7-column-11
+  bounds: 320, 192, 32, 32
+row-7-column-12
+  bounds: 352, 192, 32, 32
+row-7-column-13
+  bounds: 384, 192, 32, 32
+row-7-column-14
+  bounds: 416, 192, 32, 32
+row-7-column-15
+  bounds: 448, 192, 32, 32
+row-8-column-1
+  bounds: 0, 224, 32, 32
+row-8-column-2
+  bounds: 32, 224, 32, 32
+row-8-column-3
+  bounds: 64, 224, 32, 32
+row-8-column-4
+  bounds: 96, 224, 32, 32
+row-8-column-5
+  bounds: 128, 224, 32, 32
+row-8-column-6
+  bounds: 160, 224, 32, 32
+row-8-column-7
+  bounds: 192, 224, 32, 32
+row-8-column-8
+  bounds: 224, 224, 32, 32
+row-8-column-9
+  bounds: 256, 224, 32, 32
+row-8-column-10
+  bounds: 288, 224, 32, 32
+row-8-column-11
+  bounds: 320, 224, 32, 32
+row-8-column-12
+  bounds: 352, 224, 32, 32
+row-8-column-13
+  bounds: 384, 224, 32, 32
+row-8-column-14
+  bounds: 416, 224, 32, 32
+row-8-column-15
+  bounds: 448, 224, 32, 32
+row-9-column-1
+  bounds: 0, 256, 32, 32
+row-9-column-2
+  bounds: 32, 256, 32, 32
+row-9-column-3
+  bounds: 64, 256, 32, 32
+row-9-column-4
+  bounds: 96, 256, 32, 32
+row-9-column-5
+  bounds: 128, 256, 32, 32
+row-9-column-6
+  bounds: 160, 256, 32, 32
+row-9-column-7
+  bounds: 192, 256, 32, 32
+row-9-column-8
+  bounds: 224, 256, 32, 32
+row-9-column-9
+  bounds: 256, 256, 32, 32
+row-9-column-10
+  bounds: 288, 256, 32, 32
+row-9-column-11
+  bounds: 320, 256, 32, 32
+row-9-column-12
+  bounds: 352, 256, 32, 32
+row-9-column-13
+  bounds: 384, 256, 32, 32
+row-9-column-14
+  bounds: 416, 256, 32, 32
+row-9-column-15
+  bounds: 448, 256, 32, 32
+row-10-column-1
+  bounds: 0, 288, 32, 32
+row-10-column-2
+  bounds: 32, 288, 32, 32
+row-10-column-3
+  bounds: 64, 288, 32, 32
+row-10-column-4
+  bounds: 96, 288, 32, 32
+row-10-column-5
+  bounds: 128, 288, 32, 32
+row-10-column-6
+  bounds: 160, 288, 32, 32
+row-10-column-7
+  bounds: 192, 288, 32, 32
+row-10-column-8
+  bounds: 224, 288, 32, 32
+row-10-column-9
+  bounds: 256, 288, 32, 32
+row-10-column-10
+  bounds: 288, 288, 32, 32
+row-10-column-11
+  bounds: 320, 288, 32, 32
+row-10-column-12
+  bounds: 352, 288, 32, 32
+row-10-column-13
+  bounds: 384, 288, 32, 32
+row-10-column-14
+  bounds: 416, 288, 32, 32
+row-10-column-15
+  bounds: 448, 288, 32, 32

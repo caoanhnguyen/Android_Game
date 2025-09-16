@@ -6,19 +6,28 @@ import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.NinePatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.ui.Image;
+import com.badlogic.gdx.scenes.scene2d.ui.ImageButton;
 import com.badlogic.gdx.scenes.scene2d.ui.Label;
+import com.badlogic.gdx.scenes.scene2d.ui.Stack;
 import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
+import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
+import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.Align;
+import com.badlogic.gdx.utils.Scaling;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.mygdx.td.TDGame;
+import com.badlogic.gdx.graphics.g2d.TextureAtlas;
+import com.badlogic.gdx.scenes.scene2d.ui.Skin;
 
 public class MainMenuScreen implements Screen {
 
@@ -29,13 +38,16 @@ public class MainMenuScreen implements Screen {
     private boolean musicEnabled = true;
     private boolean soundEnabled = true;
 
-    // Chọn 1 trong 2 cách:
-    private static final boolean USE_RELATIVE = false;      // true = dùng % chiều cao
-    private static final float ICON_SIZE_FIXED = 60f;      // kích thước cố định nếu USE_RELATIVE = false
-    private static final float ICON_RELATIVE_H = 0.20f;     // 20% chiều cao nếu USE_RELATIVE = true
-
-    // Bật tạm debug bounds (Set true nếu muốn nhìn khung)
+    private static final boolean USE_RELATIVE = false;
+    private static final float ICON_SIZE_FIXED = 60f;
+    private static final float ICON_RELATIVE_H = 0.20f;
     private static final boolean ENABLE_DEBUG_BOUNDS = false;
+
+    private BitmapFont titleFont;
+    private NinePatch bannerNinePatch;
+
+    // Lưu lại kích thước gốc banner để scale tỉ lệ không méo góc
+    private float bannerOrigW, bannerOrigH;
 
     public MainMenuScreen(TDGame game) {
         this.game = game;
@@ -44,6 +56,21 @@ public class MainMenuScreen implements Screen {
         camera.position.set(400, 240, 0);
         camera.update();
 
+        // Load font title (giống splash)
+        try {
+            titleFont = new BitmapFont(Gdx.files.internal("font/font_title.fnt"));
+            titleFont.setUseIntegerPositions(false);
+        } catch (Exception e) {
+            titleFont = new BitmapFont();
+        }
+
+        // Load NinePatch banner (cách 1: tăng chiều rộng code, giữ nguyên ảnh)
+        bannerNinePatch = new NinePatch(new Texture(Gdx.files.internal("ui/banner_11.9.png")), 16, 16, 16, 16);
+
+        // Lưu lại kích thước gốc
+        bannerOrigW = bannerNinePatch.getTotalWidth();
+        bannerOrigH = bannerNinePatch.getTotalHeight();
+
         Gdx.input.setInputProcessor(stage);
         buildUI();
     }
@@ -51,31 +78,41 @@ public class MainMenuScreen implements Screen {
     private void buildUI() {
         if (ENABLE_DEBUG_BOUNDS) stage.setDebugAll(true);
 
-        BitmapFont font = (game.assets.fontMedium != null) ? game.assets.fontMedium : new BitmapFont();
-        font.getData().setScale(1f);
-        // --------- BUTTON STYLE ----------
-        TextButton.TextButtonStyle style = new TextButton.TextButtonStyle();
-        style.up   = drawable(game.assets.btnUp);
-        style.over = drawable(game.assets.btnOver != null ? game.assets.btnOver : game.assets.btnUp);
-        style.down = drawable(game.assets.btnDown != null ? game.assets.btnDown : game.assets.btnUp);
-        style.font = font;
-        style.fontColor = Color.WHITE;
-        style.overFontColor = Color.YELLOW;
-        style.downFontColor = Color.LIGHT_GRAY;
+        // --- TẠO BUTTON ATLAS/SKIN ---
+        TextureAtlas buttonAtlas = new TextureAtlas(Gdx.files.internal("ui/orange_buttons_text.atlas"));
+        for(Texture texture : buttonAtlas.getTextures()) {
+            texture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        }
+        Skin buttonSkin = new Skin(buttonAtlas);
 
-        TextButton startBtn = new TextButton("START", style);
-        TextButton creditsBtn = new TextButton("CREDITS", style);
-        startBtn.pad(6, 40, 6, 40);
-        creditsBtn.pad(6, 40, 6, 40);
+        // START Button
+        Drawable startUp   = buttonSkin.getDrawable("START_over");
+        Drawable startOver = buttonSkin.getDrawable("START_up");
+        Drawable startDown = buttonSkin.getDrawable("START_down");
+        BitmapFont font = (game.assets.fontMedium != null) ? game.assets.fontMedium : new BitmapFont();
+        TextButton.TextButtonStyle startStyle = new TextButton.TextButtonStyle(startUp, startDown, startOver, font);
+        TextButton startBtn = new TextButton("", startStyle);
+
+        float origWidth = startUp.getMinWidth();
+        float origHeight = startUp.getMinHeight();
+        float scale = 2f;
 
         startBtn.addListener(new ClickListener() {
             @Override public void clicked(InputEvent event, float x, float y) {
-                game.startGame();
+                game.setScreen(new SelectLevelScreen(game));
             }
         });
-        creditsBtn.addListener(new ClickListener() {
+
+        // Quit button
+        Drawable quitUp   = buttonSkin.getDrawable("QUIT_over");
+        Drawable quitDown = buttonSkin.getDrawable("QUIT_up");
+        Drawable quitOver = buttonSkin.getDrawable("QUIT_over");
+        TextButton.TextButtonStyle quitStyle = new TextButton.TextButtonStyle(quitUp, quitDown, quitOver, font);
+        TextButton quitBtn = new TextButton("", quitStyle);
+
+        quitBtn.addListener(new ClickListener() {
             @Override public void clicked(InputEvent event, float x, float y) {
-                Gdx.app.log("MENU", "Credits pressed");
+                Gdx.app.exit();
             }
         });
 
@@ -84,53 +121,138 @@ public class MainMenuScreen implements Screen {
         root.setFillParent(true);
         stage.addActor(root);
 
-        Image logoImg = (game.assets.logoTex != null)
-            ? new Image(drawable(game.assets.logoTex))
-            : new Image(drawable(null));
+        // --- Dòng chữ TOWER DEFENSE nằm trên NinePatch banner ---
+        NinePatchDrawable bannerDrawable = new NinePatchDrawable(bannerNinePatch);
+        Image bannerImg = new Image(bannerDrawable);
+        bannerImg.setScaling(Scaling.stretch);
+        bannerImg.setColor(1, 1, 1, 0.92f);
 
-        if (game.assets.logoTex != null) {
-            float targetW = 260f;
-            float ratio = game.assets.logoTex.getHeight() / (float) game.assets.logoTex.getWidth();
-            logoImg.setSize(targetW, targetW * ratio);
-        }
+        Label.LabelStyle titleStyle = new Label.LabelStyle(titleFont, new Color(1f, 0.90f, 0.10f, 1f));
+        Label titleLabel = new Label("TOWER DEFENSE", titleStyle);
+        titleLabel.setFontScale(1.5f);
+        titleLabel.setAlignment(Align.center);
+
+        // Stack: chồng banner và label lên nhau
+        Stack titleStack = new Stack();
+        titleStack.add(bannerImg);
+        titleStack.add(titleLabel);
+
+        float bannerWidth = 600f;
+        float bannerHeight = 100f;
+
+        titleStack.setSize(bannerWidth, bannerHeight);
+        bannerImg.setSize(bannerWidth, bannerHeight);
 
         Table menuTable = new Table();
-        menuTable.defaults().space(18f);
-        menuTable.add(startBtn).row();
-        menuTable.add(creditsBtn).row();
+        menuTable.defaults().space(10f);
+        menuTable.add(startBtn).size(origWidth * scale, origHeight * scale).row();
+        menuTable.add(quitBtn).size(origWidth * scale * 0.75f, origHeight * scale * 0.75f).row();
 
-        root.add(logoImg).padTop(40f).row();
-        root.add(menuTable).expandY().top();
+        // Đảm bảo layout cân giữa, các thành phần không dính lên trên
+        root.add().expandY().row(); // Thêm dòng trống đẩy giữa
+        root.add(titleStack).padTop(100f).padBottom(8f).width(bannerWidth).height(bannerHeight).center().row();
+        root.add(menuTable).padBottom(30f).center().row();
+        root.add().expandY().row();
 
-        // --------- ICONS (LỚN) ----------
+        // --------- ICONS (LỚN) sử dụng texture atlas mới ----------
         float iconSize = USE_RELATIVE
             ? stage.getViewport().getWorldHeight() * ICON_RELATIVE_H
             : ICON_SIZE_FIXED;
 
-        Image musicIcon = createToggleIcon(
-            game.assets.musicOn, game.assets.musicOff,
-            () -> musicEnabled,
-            val -> {
-                musicEnabled = val;
-                Gdx.app.log("AUDIO", "Music = " + musicEnabled);
-            },
-            iconSize
-        );
-        musicIcon.setPosition(14, stage.getViewport().getWorldHeight() - 14 - musicIcon.getHeight());
-        stage.addActor(musicIcon);
+        TextureAtlas activeIconAtlas = new TextureAtlas(Gdx.files.internal("ui/orange_icon_buttons.atlas"));
+        TextureAtlas inActiveIconAtlas = new TextureAtlas(Gdx.files.internal("ui/metal_buttons_icon.atlas"));
+        for (Texture tex : activeIconAtlas.getTextures()) {
+            tex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        }
+        for (Texture tex : inActiveIconAtlas.getTextures()) {
+            tex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        }
+        Skin iconSkin = new Skin(activeIconAtlas);
+        Skin iconSkinInactive = new Skin(inActiveIconAtlas);
 
-        Image soundIcon = createToggleIcon(
-            game.assets.soundOn, game.assets.soundOff,
-            () -> soundEnabled,
-            val -> {
-                soundEnabled = val;
-                Gdx.app.log("AUDIO", "SFX = " + soundEnabled);
-            },
-            iconSize
-        );
-        soundIcon.setPosition(musicIcon.getX() + musicIcon.getWidth() + 20,
-            stage.getViewport().getWorldHeight() - 14 - soundIcon.getHeight());
-        stage.addActor(soundIcon);
+        // Hiệu ứng toggle cho music (cam: on, metal: over/down/off)
+        ImageButton.ImageButtonStyle musicToggleOnStyle = new ImageButton.ImageButtonStyle();
+        musicToggleOnStyle.up = iconSkin.getDrawable("row-8-column-8");           // cam (ON)
+        musicToggleOnStyle.over = iconSkinInactive.getDrawable("row-8-column-7"); // metal (hover)
+        musicToggleOnStyle.down = iconSkinInactive.getDrawable("row-8-column-9"); // metal (down)
+
+        ImageButton.ImageButtonStyle musicToggleOffStyle = new ImageButton.ImageButtonStyle();
+        musicToggleOffStyle.up = iconSkinInactive.getDrawable("row-8-column-9");
+        musicToggleOffStyle.over = iconSkin.getDrawable("row-8-column-7");
+        musicToggleOffStyle.down = iconSkin.getDrawable("row-8-column-8");
+
+        final ImageButton musicBtn = new ImageButton(musicEnabled ? musicToggleOnStyle : musicToggleOffStyle);
+        musicBtn.setChecked(!musicEnabled);
+        musicBtn.getImage().setScaling(Scaling.stretch);
+        musicBtn.getImage().setSize(iconSize * 2.0f, iconSize * 2.0f);
+
+        musicBtn.addListener(new ClickListener() {
+            @Override
+            public void clicked(InputEvent event, float x, float y) {
+                musicEnabled = !musicEnabled;
+                musicBtn.setStyle(musicEnabled ? musicToggleOnStyle : musicToggleOffStyle);
+            }
+        });
+
+        // Hiệu ứng toggle cho sound (cam: on, metal: over/down/off)
+        ImageButton.ImageButtonStyle soundToggleOnStyle = new ImageButton.ImageButtonStyle();
+        soundToggleOnStyle.up = iconSkin.getDrawable("row-7-column-8");           // cam (ON)
+        soundToggleOnStyle.over = iconSkinInactive.getDrawable("row-7-column-7"); // metal (hover)
+        soundToggleOnStyle.down = iconSkinInactive.getDrawable("row-7-column-9"); // metal (down)
+
+        ImageButton.ImageButtonStyle soundToggleOffStyle = new ImageButton.ImageButtonStyle();
+        soundToggleOffStyle.up = iconSkinInactive.getDrawable("row-7-column-9");
+        soundToggleOffStyle.over = iconSkin.getDrawable("row-7-column-7");
+        soundToggleOffStyle.down = iconSkin.getDrawable("row-7-column-8");
+
+        final ImageButton soundBtn = new ImageButton(soundEnabled ? soundToggleOnStyle : soundToggleOffStyle);
+        soundBtn.setChecked(!soundEnabled);
+        soundBtn.getImage().setScaling(Scaling.stretch);
+        soundBtn.getImage().setSize(iconSize * 2.0f, iconSize * 2.0f);
+
+        soundBtn.addListener(new ClickListener() {
+            @Override
+            public void clicked(InputEvent event, float x, float y) {
+                soundEnabled = !soundEnabled;
+                soundBtn.setStyle(soundEnabled ? soundToggleOnStyle : soundToggleOffStyle);
+            }
+        });
+
+        Table iconTable = new Table();
+        iconTable.top().left();
+        iconTable.setFillParent(true);
+        iconTable.add(musicBtn).size(iconSize, iconSize).pad(14, 14, 0, 0);
+        iconTable.add(soundBtn).size(iconSize, iconSize).pad(14, 20, 0, 0);
+        stage.addActor(iconTable);
+
+        // Nút setting
+
+        // 1. Tạo Drawable cho nút Setting (ví dụ từ atlas của bạn)
+        Drawable settingUp = iconSkin.getDrawable("row-2-column-10"); // Đổi tên theo atlas của bạn
+        Drawable settingOver = iconSkin.getDrawable("row-2-column-11");
+        Drawable settingDown = iconSkin.getDrawable("row-2-column-12");
+
+        ImageButton.ImageButtonStyle settingStyle = new ImageButton.ImageButtonStyle();
+        settingStyle.up = settingOver;
+        settingStyle.over = settingUp;
+        settingStyle.down = settingDown;
+
+        ImageButton settingBtn = new ImageButton(settingStyle);
+        settingBtn.getImage().setScaling(Scaling.stretch);
+        settingBtn.addListener(new ClickListener() {
+            @Override
+            public void clicked(InputEvent event, float x, float y) {
+                game.setScreen(new SettingScreen(game));
+            }
+        });
+
+        // 2. Tạo Table cho góc phải trên
+        Table settingTable = new Table();
+        settingTable.top().right();
+        settingTable.setFillParent(true);
+        settingTable.add(settingBtn).size(iconSize, iconSize).pad(14, 14, 0, 14); // pad(right) cho sát mép
+        stage.addActor(settingTable);
+
 
         // --------- BOTTOM LABEL ----------
         Label bottom = new Label("v0.1  © 2025", new Label.LabelStyle(font, Color.LIGHT_GRAY));
@@ -139,43 +261,17 @@ public class MainMenuScreen implements Screen {
         bottom.setPosition(8, 6);
         stage.addActor(bottom);
 
-        // In log xác nhận kích thước:
-        Gdx.app.log("ICON DEBUG", "musicIcon size=" + musicIcon.getWidth() + "x" + musicIcon.getHeight()
-            + "  source=" + (game.assets.musicOn != null
-            ? game.assets.musicOn.getWidth() + "x" + game.assets.musicOn.getHeight() : "null"));
+        Gdx.app.log("ICON DEBUG", "musicBtn size=" + musicBtn.getWidth() + "x" + musicBtn.getHeight());
+        Gdx.app.log("ICON DEBUG", "soundBtn size=" + soundBtn.getWidth() + "x" + soundBtn.getHeight());
     }
 
-    private Image createToggleIcon(
-        com.badlogic.gdx.graphics.Texture onTex,
-        com.badlogic.gdx.graphics.Texture offTex,
-        java.util.function.BooleanSupplier getter,
-        java.util.function.Consumer<Boolean> setter,
-        float size
-    ) {
-        boolean state = getter.getAsBoolean();
-        TextureRegionDrawable dr = drawable(state ? onTex : offTex);
-        Image img = new Image(dr);
-        img.setSize(size, size);                 // SET SIZE THẲNG
-        img.setScaling(com.badlogic.gdx.utils.Scaling.stretch); // scale texture to khớp size
-
-        img.addListener(new ClickListener() {
-            @Override public void clicked(InputEvent event, float x, float y) {
-                boolean newVal = !getter.getAsBoolean();
-                setter.accept(newVal);
-                img.setDrawable(drawable(newVal ? onTex : offTex));
-            }
-        });
-        return img;
-    }
-
-    private TextureRegionDrawable drawable(com.badlogic.gdx.graphics.Texture t) {
+    private TextureRegionDrawable drawable(Texture t) {
         if (t == null) return null;
         return new TextureRegionDrawable(new TextureRegion(t));
     }
 
     @Override
     public void render(float delta) {
-        // Phím H bật/tắt debug bounds (nếu cần)
         if (Gdx.input.isKeyJustPressed(Input.Keys.H)) {
             stage.setDebugAll(!stage.isDebugAll());
         }
@@ -188,15 +284,30 @@ public class MainMenuScreen implements Screen {
 
         game.batch.setProjectionMatrix(stage.getViewport().getCamera().combined);
         game.batch.begin();
-        if (game.assets.menuBg != null) {
-            float w = stage.getViewport().getWorldWidth();
-            float h = stage.getViewport().getWorldHeight();
-            game.batch.draw(game.assets.menuBg, 0, 0, w, h);
-        }
+        // Vẽ background phủ kín (cover)
+        drawBackgroundCover();
         game.batch.end();
 
         stage.act(delta);
         stage.draw();
+    }
+
+    // Hàm mới: vẽ background kiểu cover
+    private void drawBackgroundCover() {
+        if (game.assets.menuBg != null) {
+            float worldW = stage.getViewport().getWorldWidth();
+            float worldH = stage.getViewport().getWorldHeight();
+            float imgW = game.assets.menuBg.getWidth();
+            float imgH = game.assets.menuBg.getHeight();
+            float scale = Math.max(worldW / imgW, worldH / imgH);
+            float drawW = imgW * scale;
+            float drawH = imgH * scale;
+            float x = (worldW - drawW) / 2f;
+            float y = (worldH - drawH) / 2f;
+            game.batch.setColor(1, 1, 1, 1f);
+            game.batch.draw(game.assets.menuBg, x, y, drawW, drawH);
+            game.batch.setColor(1, 1, 1, 1f); // reset
+        }
     }
 
     @Override public void resize(int width, int height) { stage.getViewport().update(width,height,true); }
@@ -204,5 +315,10 @@ public class MainMenuScreen implements Screen {
     @Override public void hide() {}
     @Override public void pause() {}
     @Override public void resume() {}
-    @Override public void dispose() { stage.dispose(); }
+    @Override
+    public void dispose() {
+        stage.dispose();
+        if (titleFont != null) titleFont.dispose();
+        if (bannerNinePatch != null) bannerNinePatch.getTexture().dispose();
+    }
 }

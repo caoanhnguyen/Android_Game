@@ -6,17 +6,6 @@ import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration;
 import com.mygdx.td.TDGame;
 
 public class AndroidLauncher extends AndroidApplication {
-//    @Override
-//    protected void onCreate(Bundle savedInstanceState) {
-//        super.onCreate(savedInstanceState);
-//        AndroidApplicationConfiguration configuration = new AndroidApplicationConfiguration();
-//        configuration.useImmersiveMode = true;
-//        configuration.useAccelerometer = false;
-//        configuration.useCompass = false;
-//        configuration.useGyroscope = false;
-//        initialize(new TDGame(new AndroidPlatformServices(this)), configuration);
-//    }
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

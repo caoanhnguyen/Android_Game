@@ -59,16 +59,26 @@ public class SplashScreen implements Screen {
         camera.position.set(400, 240, 0);
         camera.update();
 
-        font = (game.assets.fontMedium != null) ? game.assets.fontMedium : new BitmapFont();
+        loadFontTitle();
         prepareTitleLayout();
     }
 
+    // Load font_title.fnt (bitmap font đẹp) trong assets/font/
+    private void loadFontTitle() {
+        try {
+            font = new BitmapFont(Gdx.files.internal("font/font_title.fnt"));
+            font.setUseIntegerPositions(false);
+        } catch (Exception e) {
+            Gdx.app.error("SplashScreen", "Không load được font_title.fnt, fallback font mặc định", e);
+            font = new BitmapFont();
+            font.setUseIntegerPositions(false);
+        }
+    }
+
     private void prepareTitleLayout() {
-        // Lưu scale gốc
         originalScaleX = font.getData().scaleX;
         originalScaleY = font.getData().scaleY;
 
-        // Đo ở scale 1 để tính scale mục tiêu
         font.getData().setScale(1f);
         titleLayout.setText(font, TITLE_TEXT);
         float baseWidth = titleLayout.width;
@@ -76,7 +86,6 @@ public class SplashScreen implements Screen {
         targetFontScale = desiredWidth / baseWidth;
         if (targetFontScale > 2.8f) targetFontScale = 2.8f;
 
-        // Không giữ scale này – reset về gốc để không ảnh hưởng nơi khác
         font.getData().setScale(originalScaleX, originalScaleY);
     }
 
@@ -100,12 +109,8 @@ public class SplashScreen implements Screen {
         game.batch.setProjectionMatrix(camera.combined);
         game.batch.begin();
 
-        // Background mờ nhẹ (nếu có)
-        if (game.assets.menuBg != null) {
-            game.batch.setColor(1,1,1,0.15f * globalAlpha);
-            game.batch.draw(game.assets.menuBg, 0,0,
-                viewport.getWorldWidth(), viewport.getWorldHeight());
-        }
+        // Vẽ background phủ kín (cover)
+        drawBackgroundCover(0.15f * globalAlpha);
 
         if (game.assets.logoTex != null) {
             float pulse = 1.0f + 0.05f * (float)Math.sin(time * 3f);
@@ -133,6 +138,24 @@ public class SplashScreen implements Screen {
         }
     }
 
+    // Hàm mới: vẽ background kiểu cover (phủ kín, không viền đen)
+    private void drawBackgroundCover(float alpha) {
+        if (game.assets.menuBg != null) {
+            float worldW = viewport.getWorldWidth();
+            float worldH = viewport.getWorldHeight();
+            float imgW = game.assets.menuBg.getWidth();
+            float imgH = game.assets.menuBg.getHeight();
+            float scale = Math.max(worldW / imgW, worldH / imgH);
+            float drawW = imgW * scale;
+            float drawH = imgH * scale;
+            float x = (worldW - drawW) / 2f;
+            float y = (worldH - drawH) / 2f;
+            game.batch.setColor(1, 1, 1, alpha);
+            game.batch.draw(game.assets.menuBg, x, y, drawW, drawH);
+            game.batch.setColor(1, 1, 1, 1f); // reset
+        }
+    }
+
     private void drawTitleText(float globalAlpha, float centerX, float baseY) {
         float localTime = time - TEXT_APPEAR_DELAY;
         if (localTime <= 0f) return;
@@ -146,24 +169,20 @@ public class SplashScreen implements Screen {
         float easedSlide = Interpolation.sineOut.apply(slideT);
         float yOffset = -(1f - easedSlide) * TEXT_SLIDE_DISTANCE;
 
-        // Set scale tạm
         font.getData().setScale(targetFontScale);
         titleLayout.setText(font, TITLE_TEXT);
 
         float textX = centerX - titleLayout.width / 2f;
         float textY = baseY + yOffset;
 
-        // Shadow
         for (ShadowLayer layer : SHADOW_LAYERS) {
             font.setColor(layer.r, layer.g, layer.b, layer.alpha * textAlpha);
             font.draw(game.batch, TITLE_TEXT, textX + layer.offsetX, textY + layer.offsetY);
         }
 
-        // Main text
         font.setColor(TITLE_MAIN_COLOR.r, TITLE_MAIN_COLOR.g, TITLE_MAIN_COLOR.b, textAlpha);
         font.draw(game.batch, TITLE_TEXT, textX, textY);
 
-        // Reset scale về gốc để không ảnh hưởng màn sau
         font.getData().setScale(originalScaleX, originalScaleY);
         font.setColor(1,1,1,1);
     }
