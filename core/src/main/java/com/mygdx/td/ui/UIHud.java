@@ -27,11 +27,10 @@ import com.mygdx.td.Constants;
 import com.mygdx.td.TDGame;
 import com.mygdx.td.entities.TowerType;
 import com.mygdx.td.entities.Tower;
-import com.mygdx.td.utils.SoundUtils;
 import com.mygdx.td.world.World;
 
 /**
- * HUD hiển thị: tim (lives), vàng (gold), wave và các nút Play/Pause, Settings.
+ * HUD hiển thị: tim (lives), vàng (gold), wave và các nút Play/Pause, Settings, Close (X).
  * Có popup chọn trụ và popup nâng cấp trụ.
  */
 public class UIHud {
@@ -51,11 +50,11 @@ public class UIHud {
     private Label goldLabel, heartLabel, waveLabel;
 
     // State
-    // Mặc định paused = true để nút hiển thị icon "Play" khi vào game.
-    private boolean paused = true;
+    private boolean paused = true; // mặc định Paused để hiện icon Play
     public Runnable onPauseToggle;
     public Runnable onStartWave;
     public Runnable onOpenSettings;
+    public Runnable onExitRequested; // MỚI: callback cho nút X
 
     // Kích thước
     private static final float INFO_W = 360f;
@@ -63,9 +62,7 @@ public class UIHud {
     private static final float ICON_SIZE = 24f;
     private static final float TOP_PAD = 6f;
     private static final float SIDE_PAD = 12f;
-    private static final float RIGHT_BTN_SIZE = 44f;
-
-    private SoundUtils soundUtils = new SoundUtils();
+    private static final float RIGHT_BTN_SIZE = 48f; // 3 nút cùng size 48
 
     // Tower selection
     public interface TowerSelectListener { void onTowerSelected(TowerType selectedType); }
@@ -86,7 +83,7 @@ public class UIHud {
     }
 
     private void loadAssets() {
-        font = (game.assets != null && game.assets.fontMedium != null) ? game.assets.fontMedium : new BitmapFont();
+        font = game.assets.fontMedium != null ? game.assets.fontMedium : new BitmapFont();
         try {
             waveTitleFont = new BitmapFont(Gdx.files.internal("font/font_title.fnt"));
             waveTitleFont.setUseIntegerPositions(false);
@@ -110,9 +107,7 @@ public class UIHud {
 
         try {
             TextureAtlas atlas = new TextureAtlas(Gdx.files.internal("ui/orange_icon_buttons.atlas"));
-            for (Texture tex : atlas.getTextures()) {
-                tex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
-            }
+            for (Texture tex : atlas.getTextures()) tex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
             iconSkin = new Skin(atlas);
         } catch (Throwable t) { iconSkin = null; }
 
@@ -167,7 +162,7 @@ public class UIHud {
 
         Label waveTitle = new Label("WAVE", new Label.LabelStyle(waveTitleFont, new Color(1f, 0.90f, 0.10f, 1f)));
         waveTitle.setAlignment(Align.center);
-        waveTitle.setFontScale(0.65f);
+        waveTitle.setFontScale(0.65f); // nhỏ để không tràn khung
         infoTable.add(waveTitle).minWidth(66).padRight(24f);
 
         waveLabel = new Label("0", new Label.LabelStyle(font, Color.WHITE));
@@ -177,15 +172,19 @@ public class UIHud {
 
         infoStack.add(infoTable);
 
-        // Cụm nút điều khiển bên phải
+        // Cụm nút điều khiển bên phải: Play | Setting | X
         Table controls = new Table();
         controls.right().top();
 
-        ImageButton pausePlayBtn = createPausePlayButton();
-        controls.add(pausePlayBtn).size(RIGHT_BTN_SIZE, RIGHT_BTN_SIZE).padLeft(6f);
+        ImageButton playPauseBtn = createPausePlayButton();   // sẽ toggle giữa Play/Pause
+        ImageButton settingsBtn = createSettingsButton();
+        ImageButton closeBtn    = createCloseButton();        // MỚI
 
-        ImageButton setBtn = createSettingsButton();
-        controls.add(setBtn).size(RIGHT_BTN_SIZE, RIGHT_BTN_SIZE).padLeft(6f);
+        // Thứ tự thêm X -> Setting -> Play để khi canh phải, Play nằm ngoài cùng bên phải,
+        // kế đó Setting, kế nữa là X (đúng yêu cầu "từ ngoài vào: Play, Setting, X")
+        controls.add(playPauseBtn).size(RIGHT_BTN_SIZE, RIGHT_BTN_SIZE).padLeft(6f);
+        controls.add(settingsBtn).size(RIGHT_BTN_SIZE, RIGHT_BTN_SIZE).padLeft(6f);
+        controls.add(closeBtn).size(RIGHT_BTN_SIZE, RIGHT_BTN_SIZE).padLeft(6f);
 
         root.add(infoStack).width(INFO_W).height(INFO_H).center();
         root.add().expandX();
@@ -195,25 +194,28 @@ public class UIHud {
 
     private ImageButton createPausePlayButton() {
         if (iconSkin == null) return new ImageButton(new Image().getDrawable());
-        Drawable pauseDrawable = safeDrawable("row-9-column-4");  // Pause icon
-        Drawable playDrawable  = safeDrawable("row-4-column-4");  // Play icon
+        Drawable pauseDrawable = safeDrawable("row-9-column-5");  // Pause icon
+        Drawable pauseDownDrawable  = safeDrawable("row-9-column-6");
+        Drawable pauseOverDrawable  = safeDrawable("row-9-column-4");
+
+        Drawable playDownDrawable  = safeDrawable("row-4-column-6");
+        Drawable playDrawable  = safeDrawable("row-4-column-5");  // Play icon
+        Drawable playOverDrawable  = safeDrawable("row-4-column-4");
 
         ImageButton.ImageButtonStyle style = new ImageButton.ImageButtonStyle();
         style.up = paused ? playDrawable : pauseDrawable;
-        style.over = style.up;
-        style.down = style.up;
-
+        style.over = paused ? playOverDrawable : pauseOverDrawable;
+        style.down = paused ? playDownDrawable : pauseDownDrawable;
         final ImageButton btn = new ImageButton(style);
         btn.addListener(new ClickListener() {
             @Override public void clicked(InputEvent event, float x, float y) {
                 game.playSound(game.assets.gameClickSound);
                 paused = !paused;
                 style.up = paused ? playDrawable : pauseDrawable;
-                style.over = style.up;
-                style.down = style.up;
+                style.over = paused ? playOverDrawable : pauseOverDrawable;
+                style.down = paused ? playDownDrawable : pauseDownDrawable;
                 btn.setStyle(style);
                 if (onPauseToggle != null) onPauseToggle.run();
-                // Khi chuyển sang Playing thì bắt đầu wave nếu có callback
                 if (!paused && onStartWave != null) onStartWave.run();
             }
         });
@@ -222,8 +224,8 @@ public class UIHud {
 
     private ImageButton createSettingsButton() {
         if (iconSkin == null) return new ImageButton(new Image().getDrawable());
-        Drawable up = safeDrawable("row-2-column-10");
-        Drawable over = safeDrawable("row-2-column-11");
+        Drawable up = safeDrawable("row-2-column-11");
+        Drawable over = safeDrawable("row-2-column-10");
         Drawable down = safeDrawable("row-2-column-12");
 
         ImageButton.ImageButtonStyle style = new ImageButton.ImageButtonStyle();
@@ -236,6 +238,28 @@ public class UIHud {
             @Override public void clicked(InputEvent event, float x, float y) {
                 game.playSound(game.assets.gameClickSound);
                 if (onOpenSettings != null) onOpenSettings.run();
+            }
+        });
+        return btn;
+    }
+
+    private ImageButton createCloseButton() {
+        if (iconSkin == null) return new ImageButton(new Image().getDrawable());
+        // Đúng icon X theo atlas: row-4-column-7
+        Drawable up = safeDrawable("row-4-column-8");
+        Drawable over = safeDrawable("row-4-column-7");
+        Drawable down = safeDrawable("row-4-column-9");
+        // Dùng luôn up cho over/down để thống nhất phong cách (atlas icon thường chỉ có 1 trạng thái)
+        ImageButton.ImageButtonStyle style = new ImageButton.ImageButtonStyle();
+        style.up = up;
+        style.over = over;
+        style.down = down;
+
+        final ImageButton btn = new ImageButton(style);
+        btn.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) {
+                game.playSound(game.assets.gameClickSound);
+                if (onExitRequested != null) onExitRequested.run();
             }
         });
         return btn;
@@ -420,12 +444,13 @@ public class UIHud {
         if (goldLabel != null) goldLabel.setText(String.valueOf(world.gold));
         if (heartLabel != null) heartLabel.setText(String.valueOf(world.lives));
         if (waveLabel != null) {
-            int cur = (world.waveManager != null) ? world.waveManager.getCurrentWave() : 0;
+            int cur = world.waveManager.getCurrentWave();
             waveLabel.setText(String.valueOf(cur));
         }
     }
 
     public boolean isPaused() { return paused; }
+    public Stage stage() { return stage; } // optional helper
 
     public void dispose() {
         stage.dispose();

@@ -3,7 +3,6 @@ package com.mygdx.td.managers;
 import com.mygdx.td.world.World;
 import com.mygdx.td.entities.Enemy;
 import com.mygdx.td.Constants;
-import com.badlogic.gdx.math.Vector2;
 
 /**
  * Quản lý wave: spawn enemy theo thời gian.
@@ -75,5 +74,17 @@ public class WaveManager {
         remainingThisWave = 0;
         spawnTimer = 0f;
         spawnInterval = 1.2f;
+    }
+
+    // ============ Resume support ============
+    // Đặt về trạng thái “đã hoàn thành nextWave-1, đang chờ bắt đầu nextWave”
+    public void resumeAtWave(int nextWave) {
+        if (nextWave < 1) nextWave = 1;
+        this.currentWave = nextWave - 1;
+        this.inWave = false;
+        this.remainingThisWave = 0;
+        this.spawnTimer = 0f;
+        // spawnInterval giữ theo công thức tương ứng currentWave
+        this.spawnInterval = Math.max(0.4f, 1.2f - currentWave * 0.05f);
     }
 }

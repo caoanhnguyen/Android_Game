@@ -50,6 +50,8 @@ import com.mygdx.td.entities.Enemy;
 import com.mygdx.td.entities.Tower;
 import com.mygdx.td.entities.TowerType;
 import com.mygdx.td.render.OrderedOrthogonalTiledMapRenderer;
+import com.mygdx.td.save.GameState;
+import com.mygdx.td.save.SaveManager;
 import com.mygdx.td.ui.UIHud;
 import com.mygdx.td.world.TowerSpot;
 import com.mygdx.td.world.World;
@@ -104,6 +106,9 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float HP_BAR_Y_OFFSET = 38f;
     private static final int GOLD_PER_KILL = 5;
 
+    // ========= Level & Save/Resume =========
+    private final int level; // Lưu level hiện tại để save/resume đúng map
+
     // ========= In-Game Settings Overlay =========
     private Stage overlayStage;
     private boolean settingsShown = false;
@@ -121,7 +126,7 @@ public class GameScreen extends InputAdapter implements Screen {
     private NinePatchDrawable frameDrawable;
     private NinePatchDrawable sliderBgDrawable;
     private Skin iconSkinActive, iconSkinInactive, sliderSkin;
-    private BitmapFont titleFont;
+    private BitmapFont titleFont; // font_title.fnt
     private Preferences prefs;
 
     private boolean prevMusicEnabled, prevSoundEnabled;
@@ -131,6 +136,7 @@ public class GameScreen extends InputAdapter implements Screen {
 
     public GameScreen(TDGame game, int level) {
         this.game = game;
+        this.level = level;
         camera = new OrthographicCamera();
         viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
         camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0);
@@ -154,6 +160,7 @@ public class GameScreen extends InputAdapter implements Screen {
             }
         });
 
+        // Gắn các callback HUD
         hud.onStartWave = () -> {
             if (world.waveManager != null && !world.waveManager.isInWave() && !world.gameOver) {
                 world.waveManager.startNextWave();
@@ -169,11 +176,15 @@ public class GameScreen extends InputAdapter implements Screen {
             }
         };
         hud.onOpenSettings = this::toggleSettingsOverlay;
+        hud.onExitRequested = this::showExitToSelectConfirm; // bấm X -> confirm
 
         gamePaused = hud.isPaused();
 
         overlayStage = new Stage(new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT), game.batch);
         buildSettingsOverlay();
+
+        // Thử khôi phục checkpoint nếu có và đúng level
+        attemptResumeFromCheckpoint();
 
         InputMultiplexer mux = new InputMultiplexer();
         mux.addProcessor(overlayStage);
@@ -235,6 +246,43 @@ public class GameScreen extends InputAdapter implements Screen {
 
     private void applyLoadedPath() {
         if (loadedWaypoints.size >= 2) world.path.loadFrom(loadedWaypoints);
+    }
+
+    private void attemptResumeFromCheckpoint() {
+        GameState s = SaveManager.loadCheckpoint();
+        if (s == null) return;
+        if (s.level != this.level) {
+            Gdx.app.log("Save/Resume", "Checkpoint level " + s.level + " != current " + level + ", skip resume");
+            return;
+        }
+        applyGameState(s);
+    }
+
+    private void applyGameState(GameState s) {
+        // Dọn sạch về trạng thái đầu level (không reset gold/lives mặc định vì sẽ set theo save)
+        world.reset();
+
+        // Dựng lại trụ
+        for (GameState.TowerSave ts : s.towers) {
+            Rectangle rect = ts.hasRect ? new Rectangle(ts.rx, ts.ry, ts.rw, ts.rh) : null;
+            world.addTowerRestored(ts.x, ts.y, rect, ts.typeLevel);
+        }
+
+        // Khôi phục vàng & máu
+        world.gold = s.gold;
+        world.lives = s.lives;
+
+        // Đặt WaveManager về đúng "nextWave" và đứng ngoài wave
+        world.waveManager.resumeAtWave(s.nextWave);
+
+        Gdx.app.log("Save/Resume", "Resumed level=" + s.level + " nextWave=" + s.nextWave + " towers=" + s.towers.size);
+    }
+
+    private int computeNextWaveForSave() {
+        int cur = world.waveManager.getCurrentWave();
+        boolean in = world.waveManager.isInWave();
+        // Nếu đang giữa wave -> resume lại chính wave đó; nếu đang giữa khoảng nghỉ -> sang wave tiếp theo
+        return Math.max(1, cur + (in ? 0 : 1));
     }
 
     private void syncEnemyVisuals() {
@@ -421,6 +469,7 @@ public class GameScreen extends InputAdapter implements Screen {
     private void buildSettingsOverlay() {
         prefs = Gdx.app.getPreferences("td_settings");
 
+        // Font chính: font_title.fnt
         try {
             titleFont = new BitmapFont(Gdx.files.internal("font/font_title.fnt"));
             titleFont.setUseIntegerPositions(false);
@@ -477,8 +526,8 @@ public class GameScreen extends InputAdapter implements Screen {
         center.setFillParent(true);
         overlayStage.addActor(center);
 
-        float frameWidth = 560f;  // gọn lại
-        float frameHeight = 230f; // giảm chiều cao khung
+        float frameWidth = 560f;
+        float frameHeight = 230f;
         overlayRoot.add(dimBg).grow();
         center.add(frameStack).width(frameWidth).height(frameHeight).center();
 
@@ -510,9 +559,7 @@ public class GameScreen extends InputAdapter implements Screen {
         soundToggleOffStyle.over = iconSkinActive.getDrawable("row-7-column-7");
         soundToggleOffStyle.down = iconSkinActive.getDrawable("row-7-column-8");
 
-        Label.LabelStyle labelStyle = new Label.LabelStyle();
-        labelStyle.font = titleFont;
-        labelStyle.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
+        BitmapFont mainFont = titleFont;
 
         musicBtn = new ImageButton(game.musicEnabled ? musicToggleOnStyle : musicToggleOffStyle);
         musicBtn.setChecked(!game.musicEnabled);
@@ -565,35 +612,32 @@ public class GameScreen extends InputAdapter implements Screen {
         settingsContent.clear();
         settingsContent.defaults().left();
 
-        // Hàng Music
-        settingsContent.add(new Label("Music", labelStyle)).padRight(12);
+        settingsContent.add(new Label("Music", new Label.LabelStyle(mainFont, com.badlogic.gdx.graphics.Color.WHITE))).padRight(12);
         settingsContent.add(musicBtn).size(48, 48).padRight(12);
         settingsContent.add(musicSlider).width(320).height(48).padLeft(8).padRight(8);
-        settingsContent.row().padTop(24);
+        settingsContent.row().padTop(16);
 
-        // Hàng Sound
-        settingsContent.add(new Label("Sound", labelStyle)).padRight(12);
+        settingsContent.add(new Label("Sound", new Label.LabelStyle(mainFont, com.badlogic.gdx.graphics.Color.WHITE))).padRight(12);
         settingsContent.add(soundBtn).size(48, 48).padRight(12);
         settingsContent.add(soundSlider).width(320).height(48).padLeft(8).padRight(8);
-        settingsContent.row().padTop(24);
+        settingsContent.row().padTop(14);
 
-        // Không dùng expandY để tránh thừa khoảng trắng
         // ===================== NÚT SAVE/BACK =====================
         TextButton.TextButtonStyle saveStyle = new TextButton.TextButtonStyle();
         saveStyle.up   = buttonSkin.getDrawable("SAVE_over");
         saveStyle.over = buttonSkin.getDrawable("SAVE_up");
         saveStyle.down = buttonSkin.getDrawable("SAVE_down");
-        saveStyle.font = (game.assets.fontMedium != null) ? game.assets.fontMedium : titleFont;
+        saveStyle.font = mainFont;
 
         TextButton.TextButtonStyle backStyle = new TextButton.TextButtonStyle();
         backStyle.up   = buttonSkin.getDrawable("BACK_over");
         backStyle.over = buttonSkin.getDrawable("BACK_up");
         backStyle.down = buttonSkin.getDrawable("BACK_down");
-        backStyle.font = (game.assets.fontMedium != null) ? game.assets.fontMedium : titleFont;
+        backStyle.font = mainFont;
 
         Drawable measure = buttonSkin.getDrawable("START_up");
-        float btnWidth = measure.getMinWidth() * 1.3f;   // thu nhỏ còn 1.2
-        float btnHeight = measure.getMinHeight() * 1.3f;
+        float btnWidth = measure.getMinWidth() * 1.2f;
+        float btnHeight = measure.getMinHeight() * 1.2f;
 
         saveBtn = new TextButton(" ", saveStyle);
         backBtn = new TextButton(" ", backStyle);
@@ -617,12 +661,12 @@ public class GameScreen extends InputAdapter implements Screen {
         buttonTable.add(saveBtn).size(btnWidth, btnHeight).padRight(12);
         buttonTable.add(backBtn).size(btnWidth, btnHeight);
 
-        settingsContent.add(buttonTable).colspan(3).center().padTop(18);
+        settingsContent.add(buttonTable).colspan(3).center().padTop(24);
         settingsContent.row();
     }
 
     private void applyMusicNow() {
-        if (game.assets != null && game.assets.themeMusic != null) {
+        if (game.assets.themeMusic != null) {
             game.assets.themeMusic.setLooping(true);
             game.assets.themeMusic.setVolume(game.musicEnabled ? game.musicVolume : 0f);
             if (game.musicEnabled) {
@@ -682,9 +726,7 @@ public class GameScreen extends InputAdapter implements Screen {
         hideSettingsOverlay();
     }
 
-    private void hideSettingsOverlay() {
-        setOverlayVisible(false);
-    }
+    private void hideSettingsOverlay() { setOverlayVisible(false); }
 
     @Override public void resize(int w, int h) {
         viewport.update(w, h, true);
@@ -712,5 +754,77 @@ public class GameScreen extends InputAdapter implements Screen {
             overlayStage.dispose();
             overlayStage = null;
         }
+    }
+
+    // ========= Confirm dialog (dùng font_title, đã wrap) =========
+    private void showExitToSelectConfirm() {
+        final float DIALOG_W = 520f, DIALOG_H = 220f;
+        final Table dialog = new Table();
+        dialog.setBackground(frameDrawable);
+        dialog.pad(16f);
+        dialog.setSize(DIALOG_W, DIALOG_H);
+
+        Label.LabelStyle ls = new Label.LabelStyle(titleFont, com.badlogic.gdx.graphics.Color.WHITE);
+        Label msg = new Label("EXIT TO LEVEL SELECT?\nPROGRESS WILL BE SAVED AS A CHECKPOINT", ls);
+        msg.setAlignment(Align.center);
+        msg.setFontScale(0.8f);
+        msg.setWrap(true);
+
+        Table msgWrap = new Table();
+        msgWrap.add(msg).width(DIALOG_W - 48f).center();
+
+        TextButton.TextButtonStyle okStyle = new TextButton.TextButtonStyle();
+        okStyle.up   = buttonSkin.getDrawable("SAVE_over");
+        okStyle.over = buttonSkin.getDrawable("SAVE_up");
+        okStyle.down = buttonSkin.getDrawable("SAVE_down");
+        okStyle.font = titleFont;
+
+        TextButton.TextButtonStyle cancelStyle = new TextButton.TextButtonStyle();
+        cancelStyle.up   = buttonSkin.getDrawable("BACK_over");
+        cancelStyle.over = buttonSkin.getDrawable("BACK_up");
+        cancelStyle.down = buttonSkin.getDrawable("BACK_down");
+        cancelStyle.font = titleFont;
+
+        TextButton ok = new TextButton("", okStyle);
+        TextButton cancel = new TextButton("", cancelStyle);
+
+        Drawable measure = buttonSkin.getDrawable("START_up");
+        float w = measure.getMinWidth() * 1.35f;
+        float h = measure.getMinHeight() * 1.35f;
+
+        Table btns = new Table();
+        btns.add(ok).size(w, h).padRight(16);
+        btns.add(cancel).size(w, h);
+
+        dialog.add(msgWrap).expand().fill().center().row();
+        dialog.add(btns).center().padTop(24);
+
+        dialog.setPosition(
+            overlayStage.getViewport().getWorldWidth() / 2f - dialog.getWidth() / 2f,
+            overlayStage.getViewport().getWorldHeight() / 2f - dialog.getHeight() / 2f
+        );
+
+        overlayStage.addActor(dialog);
+
+        ok.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) {
+                // Lưu checkpoint trước khi thoát
+                int nextWave = computeNextWaveForSave();
+                SaveManager.saveCheckpoint(level, world, nextWave);
+
+                dialog.remove();
+                exitToSelectLevel();
+            }
+        });
+        cancel.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) {
+                dialog.remove();
+            }
+        });
+    }
+
+    private void exitToSelectLevel() {
+        setOverlayVisible(false);
+        game.setScreen(new SelectLevelScreen(game));
     }
 }

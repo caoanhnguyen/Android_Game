@@ -33,15 +33,11 @@ public class InGameSettingsOverlay extends Group {
     private final TDGame game;
     private final Preferences prefs;
 
-    private Table rootFill;
-    private Image dimBg;
-
     private Table frameContent;
-    private Container<Table> frameContainer;
 
     private Slider musicSlider, soundSlider;
     private ImageButton musicBtn, soundBtn;
-    private TextButton saveBtn, backBtn;
+    private TextButton backBtn;
 
     private NinePatchDrawable frameDrawable;
     private NinePatchDrawable sliderBgDrawable;
@@ -53,6 +49,9 @@ public class InGameSettingsOverlay extends Group {
     private float prevMusicVolume, prevSoundVolume;
 
     private boolean built = false;
+
+    private static final float OVERLAY_TOP_PAD = 12f;
+    private static final float BUTTONS_TOP_PAD = 36f;
 
     public InGameSettingsOverlay(TDGame game) {
         this.game = game;
@@ -96,22 +95,23 @@ public class InGameSettingsOverlay extends Group {
             buttonSkin = null; // will fallback
         }
 
-        rootFill = new Table();
+        Table rootFill = new Table();
         rootFill.setFillParent(true);
         addActor(rootFill);
 
-        Image px = (game.assets != null && game.assets.whitePixel != null)
+        Image px = game.assets.whitePixel != null
             ? new Image(game.assets.whitePixel)
             : new Image(new Texture(Gdx.files.internal("ui/white1x1.png")));
-        dimBg = px;
-        dimBg.setColor(0, 0, 0, 0.55f);
-        dimBg.setFillParent(true);
+        px.setColor(0, 0, 0, 0.55f);
+        px.setFillParent(true);
 
         frameContent = new Table();
         frameContent.setBackground(frameDrawable);
         frameContent.align(Align.topLeft);
-        frameContent.pad(14f);
-        frameContainer = new Container<>(frameContent);
+        // Tăng padding top bên trong khung bằng OVERLAY_TOP_PAD
+        frameContent.pad(16f + OVERLAY_TOP_PAD, 16f, 16f, 16f);
+
+        Container<Table> frameContainer = new Container<>(frameContent);
         frameContainer.fill();
 
         buildFrameInner();
@@ -121,11 +121,11 @@ public class InGameSettingsOverlay extends Group {
         addActor(center);
 
         float frameWidth = 650f;
-        float frameHeight = 380f; // inside-frame buttons need a bit taller than SettingScreen
-        rootFill.add(dimBg).grow();
+        float frameHeight = 340f; // inside-frame buttons need a bit taller than SettingScreen
+        rootFill.add(px).grow();
         center.add(frameContainer).width(frameWidth).height(frameHeight).center();
 
-        dimBg.addListener(new ClickListener() {
+        px.addListener(new ClickListener() {
             @Override public void clicked(InputEvent event, float x, float y) { onBackNotSave(); }
         });
         addListener(new InputListener() {
@@ -191,14 +191,14 @@ public class InGameSettingsOverlay extends Group {
         frameContent.add(soundSlider).width(320).height(64).padLeft(10).padRight(10);
         frameContent.row().padTop(10);
 
-        frameContent.add().colspan(3).expandY();
+        frameContent.add().colspan(3).expandY().padBottom(24);
         frameContent.row();
 
         // Buttons – exactly like SettingScreen (with fallback)
         float btnWidth, btnHeight;
         TextButton.TextButtonStyle saveStyle = new TextButton.TextButtonStyle();
         TextButton.TextButtonStyle backStyle = new TextButton.TextButtonStyle();
-        BitmapFont btnFont = (game.assets != null && game.assets.fontMedium != null) ? game.assets.fontMedium : titleFont;
+        BitmapFont btnFont = game.assets.fontMedium != null ? game.assets.fontMedium : titleFont;
 
         if (buttonSkin != null
             && buttonSkin.has("SAVE_up", Drawable.class)
@@ -208,7 +208,7 @@ public class InGameSettingsOverlay extends Group {
             && buttonSkin.has("BACK_down", Drawable.class)
             && buttonSkin.has("BACK_over", Drawable.class)
             && buttonSkin.has("START_up", Drawable.class)) {
-            // Map styles exactly like SettingScreen
+
             saveStyle.up   = buttonSkin.getDrawable("SAVE_over");
             saveStyle.over = buttonSkin.getDrawable("SAVE_up");
             saveStyle.down = buttonSkin.getDrawable("SAVE_down");
@@ -223,7 +223,6 @@ public class InGameSettingsOverlay extends Group {
             btnWidth = measure.getMinWidth() * 1.5f;
             btnHeight = measure.getMinHeight() * 1.5f;
         } else {
-            // Fallback: visible text buttons with 9patch background so you ALWAYS see them
             NinePatchDrawable up = frameDrawable; // reuse frame 9patch as simple button bg
             NinePatchDrawable down = frameDrawable;
             saveStyle.up = up; saveStyle.down = down; saveStyle.over = down; saveStyle.font = btnFont;
@@ -231,7 +230,7 @@ public class InGameSettingsOverlay extends Group {
             btnWidth = 180f; btnHeight = 64f;
         }
 
-        saveBtn = new TextButton(" ", saveStyle);
+        TextButton saveBtn = new TextButton(" ", saveStyle);
         backBtn = new TextButton(" ", backStyle);
 
         Table btnRow = new Table();
@@ -239,7 +238,8 @@ public class InGameSettingsOverlay extends Group {
         btnRow.add(saveBtn).size(btnWidth, btnHeight).padRight(10);
         btnRow.add(backBtn).size(btnWidth, btnHeight);
 
-        frameContent.add(btnRow).colspan(3).center().padTop(8).padBottom(4);
+        // Tăng khoảng cách giữa slider và hàng nút bằng BUTTONS_TOP_PAD
+        frameContent.add(btnRow).colspan(3).center().padTop(BUTTONS_TOP_PAD).padBottom(8);
         frameContent.row();
 
         // Listeners

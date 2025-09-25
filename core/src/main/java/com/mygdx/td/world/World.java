@@ -8,6 +8,7 @@ import com.mygdx.td.entities.Enemy;
 import com.mygdx.td.entities.Bullet;
 import com.mygdx.td.managers.WaveManager;
 import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.math.Rectangle;
 import com.mygdx.td.Constants;
 import com.mygdx.td.TDGame;
 import com.mygdx.td.utils.SoundUtils;
@@ -216,5 +217,40 @@ public class World {
         lifeLostFlag = false;
         gameOver = false;
         for (TowerSpot s : towerSpots) s.used = false;
+    }
+
+    // ============ Restore support ============
+    // Dùng khi khôi phục checkpoint: thêm trụ không trừ vàng, đánh dấu spot nếu có.
+    public Tower addTowerRestored(float x, float y, Rectangle rect, int upgradeLevel) {
+        Tower t = new Tower(x, y, rect, TowerType.WOOD);
+        // Nâng cấp đến đúng level đã lưu (không trừ vàng)
+        for (int i = 0; i < upgradeLevel; i++) {
+            if (t.type.nextLevel() != null) t.upgrade();
+            else break;
+        }
+        towers.add(t);
+
+        if (rect != null) {
+            // Đánh dấu spot tương ứng đã dùng
+            TowerSpot spot = findSpotByRectApprox(rect, 0.5f);
+            if (spot != null) spot.used = true;
+        }
+        return t;
+    }
+
+    private TowerSpot findSpotByRectApprox(Rectangle r, float eps) {
+        for (TowerSpot s : towerSpots) {
+            if (approxEq(s.rect.x, r.x, eps)
+                && approxEq(s.rect.y, r.y, eps)
+                && approxEq(s.rect.width, r.width, eps)
+                && approxEq(s.rect.height, r.height, eps)) {
+                return s;
+            }
+        }
+        return null;
+    }
+
+    private boolean approxEq(float a, float b, float eps) {
+        return Math.abs(a - b) <= eps;
     }
 }
