@@ -45,7 +45,7 @@ public class SettingScreen implements Screen {
     private Slider soundSlider;
 
     // Lưu setting bằng Preferences
-    private Preferences prefs = Gdx.app.getPreferences("td_settings");
+    private final Preferences prefs = Gdx.app.getPreferences("td_settings");
 
     public SettingScreen(TDGame game) {
         this.game = game;

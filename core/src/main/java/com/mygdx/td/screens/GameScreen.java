@@ -6,14 +6,40 @@ import static com.mygdx.td.Constants.VIRTUAL_WIDTH;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.InputAdapter;
 import com.badlogic.gdx.InputMultiplexer;
+import com.badlogic.gdx.Preferences;
 import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.NinePatch;
+import com.badlogic.gdx.graphics.g2d.TextureAtlas;
 import com.badlogic.gdx.maps.MapLayer;
 import com.badlogic.gdx.maps.MapLayers;
 import com.badlogic.gdx.maps.tiled.TiledMap;
 import com.badlogic.gdx.maps.tiled.TmxMapLoader;
 import com.badlogic.gdx.maps.tiled.tiles.AnimatedTiledMapTile;
+import com.badlogic.gdx.math.Rectangle;
+import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.scenes.scene2d.InputEvent;
+import com.badlogic.gdx.scenes.scene2d.Stage;
+import com.badlogic.gdx.scenes.scene2d.ui.Image;
+import com.badlogic.gdx.scenes.scene2d.ui.ImageButton;
+import com.badlogic.gdx.scenes.scene2d.ui.Label;
+import com.badlogic.gdx.scenes.scene2d.ui.Skin;
+import com.badlogic.gdx.scenes.scene2d.ui.Slider;
+import com.badlogic.gdx.scenes.scene2d.ui.Stack;
+import com.badlogic.gdx.scenes.scene2d.ui.Table;
+import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
+import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener;
+import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
+import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
+import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
+import com.badlogic.gdx.utils.Align;
+import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.utils.ObjectMap;
+import com.badlogic.gdx.utils.Scaling;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import com.mygdx.td.TDGame;
@@ -27,12 +53,6 @@ import com.mygdx.td.render.OrderedOrthogonalTiledMapRenderer;
 import com.mygdx.td.ui.UIHud;
 import com.mygdx.td.world.TowerSpot;
 import com.mygdx.td.world.World;
-
-import com.badlogic.gdx.math.Rectangle;
-import com.badlogic.gdx.math.Vector2;
-import com.badlogic.gdx.math.Vector3;
-import com.badlogic.gdx.utils.Array;
-import com.badlogic.gdx.utils.ObjectMap;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -57,12 +77,10 @@ public class GameScreen extends InputAdapter implements Screen {
     private boolean gamePaused = false;
     private Tower selectedTower = null;
 
-    // Enemy visuals (khôi phục theo repo cũ)
     private final ObjectMap<Enemy, EnemyVisual> enemyVisuals = new ObjectMap<>();
     private final ObjectMap<Enemy, EnemyVisual> dyingEnemyVisuals = new ObjectMap<>();
     private final Set<Enemy> rewardedEnemies = new HashSet<>();
 
-    // Cấu hình strips enemy (giống repo cũ)
     private static final String ENEMY_BASE_FOLDER = "enemies/wizard";
     private static final String E_WALK_SIDE = "S_Run.png";
     private static final String E_WALK_DOWN = "D_Run.png";
@@ -74,18 +92,40 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final int    E_FRAME_W = 96;
     private static final int    E_FRAME_H = 96;
     private static final int    E_SPACING_X = 0, E_MARGIN_X = 0, E_MARGIN_Y = 0;
-    private static final int    E_FRAMES_WALK  = -1;        // auto detect
+    private static final int    E_FRAMES_WALK  = -1;
     private static final float  E_WALK_FRAME_SEC = 0.12f;
-    private static final int    E_FRAMES_DEATH = -1;        // auto detect
+    private static final int    E_FRAMES_DEATH = -1;
     private static final float  E_DEATH_FRAME_SEC = 0.10f;
     private static final float  ENEMY_TILE_SIZE = 64f;
     private static final boolean ENEMY_STRIP_FACES_RIGHT = false;
 
-    // HP bar
     private static final float HP_BAR_WIDTH = 40f;
     private static final float HP_BAR_HEIGHT = 6f;
     private static final float HP_BAR_Y_OFFSET = 38f;
     private static final int GOLD_PER_KILL = 5;
+
+    // ========= In-Game Settings Overlay =========
+    private Stage overlayStage;
+    private boolean settingsShown = false;
+
+    private Table overlayRoot;
+    private Image dimBg;
+    private Stack frameStack;
+    private Table settingsContent;
+    private Slider musicSlider, soundSlider;
+    private ImageButton musicBtn, soundBtn;
+
+    private Skin buttonSkin;
+    private TextButton saveBtn, backBtn;
+
+    private NinePatchDrawable frameDrawable;
+    private NinePatchDrawable sliderBgDrawable;
+    private Skin iconSkinActive, iconSkinInactive, sliderSkin;
+    private BitmapFont titleFont;
+    private Preferences prefs;
+
+    private boolean prevMusicEnabled, prevSoundEnabled;
+    private float prevMusicVolume, prevSoundVolume;
 
     public GameScreen(TDGame game) { this(game, 1); }
 
@@ -114,7 +154,6 @@ public class GameScreen extends InputAdapter implements Screen {
             }
         });
 
-        // WIRE HUD CALLBACKS: BẮT ĐẦU WAVE + ĐỒNG BỘ PAUSE
         hud.onStartWave = () -> {
             if (world.waveManager != null && !world.waveManager.isInWave() && !world.gameOver) {
                 world.waveManager.startNextWave();
@@ -124,16 +163,20 @@ public class GameScreen extends InputAdapter implements Screen {
         hud.onPauseToggle = () -> {
             gamePaused = hud.isPaused();
             Gdx.app.log("GAME", gamePaused ? "Paused" : "Playing");
-            // Nếu vừa chuyển sang Playing mà chưa có wave thì tự bắt đầu
             if (!gamePaused && world.waveManager != null && !world.waveManager.isInWave() && !world.gameOver) {
                 world.waveManager.startNextWave();
                 Gdx.app.log("GAME", "Auto start wave " + world.waveManager.getCurrentWave());
             }
         };
-        // Đồng bộ trạng thái ban đầu với HUD (HUD mặc định paused=true)
+        hud.onOpenSettings = this::toggleSettingsOverlay;
+
         gamePaused = hud.isPaused();
 
+        overlayStage = new Stage(new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT), game.batch);
+        buildSettingsOverlay();
+
         InputMultiplexer mux = new InputMultiplexer();
+        mux.addProcessor(overlayStage);
         mux.addProcessor(hud.getStage());
         mux.addProcessor(this);
         Gdx.input.setInputProcessor(mux);
@@ -194,10 +237,7 @@ public class GameScreen extends InputAdapter implements Screen {
         if (loadedWaypoints.size >= 2) world.path.loadFrom(loadedWaypoints);
     }
 
-    // Enemy visuals
-
     private void syncEnemyVisuals() {
-        // Add visuals cho enemy mới xuất hiện
         for (Enemy e : world.enemies) {
             if (!enemyVisuals.containsKey(e)) {
                 EnemyVisual v = EnemyVisual.fromStripsFixed(
@@ -213,7 +253,6 @@ public class GameScreen extends InputAdapter implements Screen {
                 enemyVisuals.put(e, v);
             }
         }
-        // Chuyển visual của enemy rời world sang dying map (để chạy death anim)
         Set<Enemy> toMove = new HashSet<>();
         for (Enemy e : enemyVisuals.keys()) {
             if (!world.enemies.contains(e, true)) toMove.add(e);
@@ -221,7 +260,6 @@ public class GameScreen extends InputAdapter implements Screen {
         for (Enemy e : toMove) {
             EnemyVisual v = enemyVisuals.remove(e);
             if (v != null) {
-                // Thưởng vàng nếu là bị tiêu diệt (không phải lọt end)
                 if (!rewardedEnemies.contains(e) && e.isDead() && !e.reachedEnd) {
                     world.gold += GOLD_PER_KILL;
                     rewardedEnemies.add(e);
@@ -233,7 +271,6 @@ public class GameScreen extends InputAdapter implements Screen {
                 }
             }
         }
-        // Gỡ dấu đã thưởng cho các enemy không còn trong dying map
         rewardedEnemies.removeIf(e -> !dyingEnemyVisuals.containsKey(e));
     }
 
@@ -253,7 +290,6 @@ public class GameScreen extends InputAdapter implements Screen {
     }
 
     private void applyKillRewards() {
-        // Giữ lại để an toàn (nhưng hiện tại thưởng vàng chủ yếu trong syncEnemyVisuals khi rời world)
         for (Enemy e : world.enemies) {
             if (e.isDead() && !rewardedEnemies.contains(e)) {
                 world.gold += GOLD_PER_KILL;
@@ -286,16 +322,13 @@ public class GameScreen extends InputAdapter implements Screen {
         game.batch.setProjectionMatrix(camera.combined);
         game.batch.begin();
 
-        // Draw enemies (alive)
         for (Enemy e : world.enemies) {
             EnemyVisual v = enemyVisuals.get(e);
             if (v != null) v.draw(game.batch, e);
         }
-        // Draw enemies still playing death animation
         for (ObjectMap.Entry<Enemy, EnemyVisual> entry : dyingEnemyVisuals.entries()) {
             entry.value.draw(game.batch, entry.key);
         }
-        // Draw HP bars
         for (Enemy e : world.enemies) {
             if (e.isDead()) continue;
             float pct = Math.max(0f, Math.min(1f, e.getHpPercent()));
@@ -310,7 +343,6 @@ public class GameScreen extends InputAdapter implements Screen {
             game.batch.setColor(1, 1, 1, 1);
         }
 
-        // Draw towers
         for (Tower t : world.towers) {
             TowerVisual v = towerVisuals.get(t);
             if (v == null) {
@@ -321,7 +353,6 @@ public class GameScreen extends InputAdapter implements Screen {
             v.update(t, delta);
             v.draw(game.batch, t);
         }
-        // Draw bullets
         for (Bullet b : world.bullets) {
             game.batch.draw(game.assets.bulletTex, b.pos.x - 8, b.pos.y - 8, 16, 16);
         }
@@ -331,6 +362,9 @@ public class GameScreen extends InputAdapter implements Screen {
         hud.act(delta);
         hud.updateHudValues(world.waveManager.isInWave());
         hud.draw();
+
+        overlayStage.act(delta);
+        overlayStage.draw();
     }
 
     @Override
@@ -344,7 +378,8 @@ public class GameScreen extends InputAdapter implements Screen {
         if (worldX < 0 || worldX > viewport.getWorldWidth() || worldY < 0 || worldY > viewport.getWorldHeight())
             return false;
 
-        // Ưu tiên chọn trụ nếu bấm vào trụ đã đặt, nếu không thì chọn spot
+        if (settingsShown) return false;
+
         Tower tower = findTowerAt(worldX, worldY, 40);
         if (tower != null) {
             selectedTower = tower;
@@ -381,7 +416,283 @@ public class GameScreen extends InputAdapter implements Screen {
         return null;
     }
 
-    @Override public void resize(int w, int h) { viewport.update(w, h, true); camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0); camera.update(); if (hud != null) hud.getStage().getViewport().update(w, h, true); }
+    // ================= In-Game Settings Overlay =================
+
+    private void buildSettingsOverlay() {
+        prefs = Gdx.app.getPreferences("td_settings");
+
+        try {
+            titleFont = new BitmapFont(Gdx.files.internal("font/font_title.fnt"));
+            titleFont.setUseIntegerPositions(false);
+        } catch (Exception e) {
+            titleFont = new BitmapFont();
+        }
+
+        NinePatch framePatch = new NinePatch(new Texture(Gdx.files.internal("ui/banner_11.9.png")), 16, 16, 16, 16);
+        frameDrawable = new NinePatchDrawable(framePatch);
+
+        NinePatch sliderBgPatch = new NinePatch(new Texture(Gdx.files.internal("ui/bg_slider.9.png")), 8, 8, 8, 8);
+        sliderBgDrawable = new NinePatchDrawable(sliderBgPatch);
+
+        TextureAtlas sliderAtlas = new TextureAtlas(Gdx.files.internal("ui/knob.atlas"));
+        sliderSkin = new Skin(sliderAtlas);
+
+        TextureAtlas activeIconAtlas = new TextureAtlas(Gdx.files.internal("ui/orange_icon_buttons.atlas"));
+        TextureAtlas inActiveIconAtlas = new TextureAtlas(Gdx.files.internal("ui/metal_buttons_icon.atlas"));
+        for (Texture tex : activeIconAtlas.getTextures()) tex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        for (Texture tex : inActiveIconAtlas.getTextures()) tex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        iconSkinActive = new Skin(activeIconAtlas);
+        iconSkinInactive = new Skin(inActiveIconAtlas);
+
+        TextureAtlas buttonAtlas = new TextureAtlas(Gdx.files.internal("ui/orange_buttons_text.atlas"));
+        for (Texture t : buttonAtlas.getTextures()) t.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        buttonSkin = new Skin(buttonAtlas);
+
+        overlayRoot = new Table();
+        overlayRoot.setFillParent(true);
+        overlayStage.addActor(overlayRoot);
+
+        dimBg = new Image(game.assets.whitePixel);
+        dimBg.setColor(0, 0, 0, 0.55f);
+        dimBg.setFillParent(true);
+        dimBg.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) { onBackNotSave(); }
+        });
+
+        settingsContent = new Table();
+        settingsContent.pad(24f);
+        settingsContent.align(Align.topLeft);
+
+        Image frameImg = new Image(frameDrawable);
+        frameImg.setScaling(Scaling.stretch);
+        frameImg.setColor(1, 1, 1, 0.93f);
+
+        frameStack = new Stack();
+        frameStack.add(frameImg);
+        frameStack.add(settingsContent);
+
+        buildSettingsInnerContent();
+
+        Table center = new Table();
+        center.setFillParent(true);
+        overlayStage.addActor(center);
+
+        float frameWidth = 560f;  // gọn lại
+        float frameHeight = 230f; // giảm chiều cao khung
+        overlayRoot.add(dimBg).grow();
+        center.add(frameStack).width(frameWidth).height(frameHeight).center();
+
+        setOverlayVisible(false);
+    }
+
+    private void buildSettingsInnerContent() {
+        Slider.SliderStyle sliderStyle = new Slider.SliderStyle();
+        sliderStyle.background = sliderBgDrawable;
+        sliderStyle.knob = sliderSkin.getDrawable("knob");
+
+        ImageButton.ImageButtonStyle musicToggleOnStyle = new ImageButton.ImageButtonStyle();
+        musicToggleOnStyle.up = iconSkinActive.getDrawable("row-8-column-8");
+        musicToggleOnStyle.over = iconSkinInactive.getDrawable("row-8-column-7");
+        musicToggleOnStyle.down = iconSkinInactive.getDrawable("row-8-column-9");
+
+        ImageButton.ImageButtonStyle musicToggleOffStyle = new ImageButton.ImageButtonStyle();
+        musicToggleOffStyle.up = iconSkinInactive.getDrawable("row-8-column-9");
+        musicToggleOffStyle.over = iconSkinActive.getDrawable("row-8-column-7");
+        musicToggleOffStyle.down = iconSkinActive.getDrawable("row-8-column-8");
+
+        ImageButton.ImageButtonStyle soundToggleOnStyle = new ImageButton.ImageButtonStyle();
+        soundToggleOnStyle.up = iconSkinActive.getDrawable("row-7-column-8");
+        soundToggleOnStyle.over = iconSkinInactive.getDrawable("row-7-column-7");
+        soundToggleOnStyle.down = iconSkinInactive.getDrawable("row-7-column-9");
+
+        ImageButton.ImageButtonStyle soundToggleOffStyle = new ImageButton.ImageButtonStyle();
+        soundToggleOffStyle.up = iconSkinInactive.getDrawable("row-7-column-9");
+        soundToggleOffStyle.over = iconSkinActive.getDrawable("row-7-column-7");
+        soundToggleOffStyle.down = iconSkinActive.getDrawable("row-7-column-8");
+
+        Label.LabelStyle labelStyle = new Label.LabelStyle();
+        labelStyle.font = titleFont;
+        labelStyle.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
+
+        musicBtn = new ImageButton(game.musicEnabled ? musicToggleOnStyle : musicToggleOffStyle);
+        musicBtn.setChecked(!game.musicEnabled);
+        musicBtn.getImage().setScaling(Scaling.stretch);
+        musicBtn.getImage().setSize(48, 48);
+        musicBtn.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) {
+                game.playSound(game.assets.gameClickSound);
+                game.musicEnabled = !game.musicEnabled;
+                musicBtn.setStyle(game.musicEnabled ? musicToggleOnStyle : musicToggleOffStyle);
+                applyMusicNow();
+            }
+        });
+
+        soundBtn = new ImageButton(game.soundEnabled ? soundToggleOnStyle : soundToggleOffStyle);
+        soundBtn.setChecked(!game.soundEnabled);
+        soundBtn.getImage().setScaling(Scaling.stretch);
+        soundBtn.getImage().setSize(48, 48);
+        soundBtn.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) {
+                game.playSound(game.assets.gameClickSound);
+                game.soundEnabled = !game.soundEnabled;
+                soundBtn.setStyle(game.soundEnabled ? soundToggleOnStyle : soundToggleOffStyle);
+            }
+        });
+
+        musicSlider = new Slider(0f, 1f, 0.01f, false, sliderStyle);
+        soundSlider = new Slider(0f, 1f, 0.01f, false, sliderStyle);
+
+        float mVol = prefs.getFloat("musicVolume", game.musicVolume);
+        float sVol = prefs.getFloat("soundVolume", game.soundVolume);
+        game.musicVolume = mVol;
+        game.soundVolume = sVol;
+        musicSlider.setValue(mVol);
+        soundSlider.setValue(sVol);
+        applyMusicNow();
+
+        musicSlider.addListener(new ChangeListener() {
+            @Override public void changed(ChangeEvent event, com.badlogic.gdx.scenes.scene2d.Actor actor) {
+                game.musicVolume = musicSlider.getValue();
+                applyMusicNow();
+            }
+        });
+        soundSlider.addListener(new ChangeListener() {
+            @Override public void changed(ChangeEvent event, com.badlogic.gdx.scenes.scene2d.Actor actor) {
+                game.soundVolume = soundSlider.getValue();
+            }
+        });
+
+        settingsContent.clear();
+        settingsContent.defaults().left();
+
+        // Hàng Music
+        settingsContent.add(new Label("Music", labelStyle)).padRight(12);
+        settingsContent.add(musicBtn).size(48, 48).padRight(12);
+        settingsContent.add(musicSlider).width(320).height(48).padLeft(8).padRight(8);
+        settingsContent.row().padTop(24);
+
+        // Hàng Sound
+        settingsContent.add(new Label("Sound", labelStyle)).padRight(12);
+        settingsContent.add(soundBtn).size(48, 48).padRight(12);
+        settingsContent.add(soundSlider).width(320).height(48).padLeft(8).padRight(8);
+        settingsContent.row().padTop(24);
+
+        // Không dùng expandY để tránh thừa khoảng trắng
+        // ===================== NÚT SAVE/BACK =====================
+        TextButton.TextButtonStyle saveStyle = new TextButton.TextButtonStyle();
+        saveStyle.up   = buttonSkin.getDrawable("SAVE_over");
+        saveStyle.over = buttonSkin.getDrawable("SAVE_up");
+        saveStyle.down = buttonSkin.getDrawable("SAVE_down");
+        saveStyle.font = (game.assets.fontMedium != null) ? game.assets.fontMedium : titleFont;
+
+        TextButton.TextButtonStyle backStyle = new TextButton.TextButtonStyle();
+        backStyle.up   = buttonSkin.getDrawable("BACK_over");
+        backStyle.over = buttonSkin.getDrawable("BACK_up");
+        backStyle.down = buttonSkin.getDrawable("BACK_down");
+        backStyle.font = (game.assets.fontMedium != null) ? game.assets.fontMedium : titleFont;
+
+        Drawable measure = buttonSkin.getDrawable("START_up");
+        float btnWidth = measure.getMinWidth() * 1.3f;   // thu nhỏ còn 1.2
+        float btnHeight = measure.getMinHeight() * 1.3f;
+
+        saveBtn = new TextButton(" ", saveStyle);
+        backBtn = new TextButton(" ", backStyle);
+
+        saveBtn.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) {
+                saveSettings();
+                game.playSound(game.assets.gameClickSound);
+                hideSettingsOverlay();
+            }
+        });
+        backBtn.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) {
+                game.playSound(game.assets.gameClickSound);
+                onBackNotSave();
+            }
+        });
+
+        Table buttonTable = new Table();
+        buttonTable.center();
+        buttonTable.add(saveBtn).size(btnWidth, btnHeight).padRight(12);
+        buttonTable.add(backBtn).size(btnWidth, btnHeight);
+
+        settingsContent.add(buttonTable).colspan(3).center().padTop(18);
+        settingsContent.row();
+    }
+
+    private void applyMusicNow() {
+        if (game.assets != null && game.assets.themeMusic != null) {
+            game.assets.themeMusic.setLooping(true);
+            game.assets.themeMusic.setVolume(game.musicEnabled ? game.musicVolume : 0f);
+            if (game.musicEnabled) {
+                if (!game.assets.themeMusic.isPlaying()) game.assets.themeMusic.play();
+            } else {
+                if (game.assets.themeMusic.isPlaying()) game.assets.themeMusic.pause();
+            }
+        }
+    }
+
+    private void saveSettings() {
+        prefs.putBoolean("musicEnabled", game.musicEnabled);
+        prefs.putBoolean("soundEnabled", game.soundEnabled);
+        prefs.putFloat("musicVolume", game.musicVolume);
+        prefs.putFloat("soundVolume", game.soundVolume);
+        prefs.flush();
+        applyMusicNow();
+    }
+
+    private void setOverlayVisible(boolean visible) {
+        settingsShown = visible;
+        overlayRoot.setVisible(visible);
+        frameStack.setVisible(visible);
+        if (visible) {
+            overlayStage.setKeyboardFocus(frameStack);
+            overlayStage.setScrollFocus(frameStack);
+        } else {
+            overlayStage.setKeyboardFocus(null);
+            overlayStage.setScrollFocus(null);
+        }
+    }
+
+    private void toggleSettingsOverlay() {
+        if (settingsShown) hideSettingsOverlay();
+        else showSettingsOverlay();
+    }
+
+    private void showSettingsOverlay() {
+        prevMusicEnabled = game.musicEnabled;
+        prevSoundEnabled = game.soundEnabled;
+        prevMusicVolume  = game.musicVolume;
+        prevSoundVolume  = game.soundVolume;
+
+        musicBtn.setChecked(!game.musicEnabled);
+        soundBtn.setChecked(!game.soundEnabled);
+        musicSlider.setValue(game.musicVolume);
+        soundSlider.setValue(game.soundVolume);
+        setOverlayVisible(true);
+    }
+
+    private void onBackNotSave() {
+        game.musicEnabled = prevMusicEnabled;
+        game.soundEnabled = prevSoundEnabled;
+        game.musicVolume  = prevMusicVolume;
+        game.soundVolume  = prevSoundVolume;
+        applyMusicNow();
+        hideSettingsOverlay();
+    }
+
+    private void hideSettingsOverlay() {
+        setOverlayVisible(false);
+    }
+
+    @Override public void resize(int w, int h) {
+        viewport.update(w, h, true);
+        camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0);
+        camera.update();
+        if (hud != null) hud.getStage().getViewport().update(w, h, true);
+        if (overlayStage != null) overlayStage.getViewport().update(w, h, true);
+    }
     @Override public void show() {}
     @Override public void hide() {}
     @Override public void pause() { gamePaused = true; }
@@ -396,5 +707,10 @@ public class GameScreen extends InputAdapter implements Screen {
         enemyVisuals.clear();
         for (EnemyVisual v : dyingEnemyVisuals.values()) v.dispose();
         dyingEnemyVisuals.clear();
+
+        if (overlayStage != null) {
+            overlayStage.dispose();
+            overlayStage = null;
+        }
     }
 }
