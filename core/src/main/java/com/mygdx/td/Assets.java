@@ -2,6 +2,8 @@ package com.mygdx.td;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.assets.AssetManager;
+import com.badlogic.gdx.audio.Sound;
+import com.badlogic.gdx.audio.Music;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
@@ -38,6 +40,15 @@ public class Assets {
     // Utility
     public Texture whitePixel;
 
+    // Sound effects
+    public Sound shootSound;
+    // Nhạc nền dùng Music!
+    public Music themeMusic;
+    public Sound gameClickSound;
+    public Sound laserGunSound;
+    public Sound selectLevelSound;
+    public Sound upgradeTowerSound;
+
     public void loadAllAsync() {
         // Gameplay textures
         safeLoadTexture("enemy.png");
@@ -58,7 +69,16 @@ public class Assets {
 
         // Fonts (.fnt)
         safeLoadFont("font/font-small.fnt");
-        // Nếu sau này có thêm font khác thì thêm dòng tương tự.
+
+        // Sound effects
+        safeLoadSound("sounds/shoot.mp3");
+
+        // Music (theme)
+        safeLoadMusic("sounds/themeMusic.mp3");
+        safeLoadSound("sounds/game_click.wav");
+        safeLoadSound("sounds/laser_gun.wav");
+        safeLoadSound("sounds/select_level.wav");
+        safeLoadSound("sounds/upgrade_tower.wav");
     }
 
     private void safeLoadTexture(String path) {
@@ -74,6 +94,22 @@ public class Assets {
             manager.load(path, BitmapFont.class);
         } else {
             Gdx.app.error("ASSETS", "Không tìm thấy file font: " + path);
+        }
+    }
+
+    private void safeLoadSound(String path) {
+        if (Gdx.files.internal(path).exists()) {
+            manager.load(path, Sound.class);
+        } else {
+            Gdx.app.error("ASSETS", "Không tìm thấy file sound: " + path);
+        }
+    }
+
+    private void safeLoadMusic(String path) {
+        if (Gdx.files.internal(path).exists()) {
+            manager.load(path, Music.class);
+        } else {
+            Gdx.app.error("ASSETS", "Không tìm thấy file music: " + path);
         }
     }
 
@@ -98,6 +134,15 @@ public class Assets {
         soundOff = getTex("ui/sound_off.png");
         menuBg   = getTex("ui/background.png");
 
+        // Sound effects
+        shootSound = getSound("sounds/shoot.mp3");
+        // Music
+        themeMusic = getMusic("sounds/themeMusic.mp3");
+        gameClickSound = getSound("sounds/game_click.wav");
+        laserGunSound = getSound("sounds/laser_gun.wav");
+        selectLevelSound = getSound("sounds/select_level.wav");
+        upgradeTowerSound = getSound("sounds/upgrade_tower.wav");
+
         if (menuBg == null) {
             Gdx.app.error("ASSETS", "menuBg NULL - kiểm tra tên file: ui/background.png");
         }
@@ -118,6 +163,14 @@ public class Assets {
 
     private Texture getTex(String path) {
         return manager.isLoaded(path) ? manager.get(path, Texture.class) : null;
+    }
+
+    private Sound getSound(String path) {
+        return manager.isLoaded(path) ? manager.get(path, Sound.class) : null;
+    }
+
+    private Music getMusic(String path) {
+        return manager.isLoaded(path) ? manager.get(path, Music.class) : null;
     }
 
     private void applyFilters() {
@@ -144,7 +197,6 @@ public class Assets {
         pm.dispose();
     }
 
-
     public TextureRegion getWhiteRegion() {
         return whitePixel == null ? null : new TextureRegion(whitePixel);
     }
@@ -153,6 +205,8 @@ public class Assets {
         if (whitePixel != null) whitePixel.dispose();
         if (fontSmall != null) fontSmall.dispose();
         if (fontMedium != null && fontMedium != fontSmall) fontMedium.dispose();
+        if (shootSound != null) shootSound.dispose();
+        if (themeMusic != null) themeMusic.dispose();
         manager.dispose();
     }
 }

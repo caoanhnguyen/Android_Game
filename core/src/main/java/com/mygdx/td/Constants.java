@@ -5,7 +5,7 @@ public final class Constants {
 
     // Virtual resolution
     public static final int VIRTUAL_WIDTH = 960;
-    public static final int VIRTUAL_HEIGHT = 540;
+    public static final int VIRTUAL_HEIGHT = 544;
 
     // Enemy
     public static final float ENEMY_BASE_SPEED = 80f;

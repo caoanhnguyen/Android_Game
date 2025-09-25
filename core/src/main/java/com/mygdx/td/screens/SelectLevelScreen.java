@@ -1,7 +1,11 @@
 package com.mygdx.td.screens;
 
+import static com.mygdx.td.Constants.VIRTUAL_HEIGHT;
+import static com.mygdx.td.Constants.VIRTUAL_WIDTH;
+
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Screen;
+import com.badlogic.gdx.audio.Sound;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
@@ -21,9 +25,11 @@ import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.Scaling;
 import com.badlogic.gdx.utils.viewport.FitViewport;
+import com.badlogic.gdx.utils.viewport.StretchViewport;
 import com.mygdx.td.TDGame;
 import com.badlogic.gdx.scenes.scene2d.ui.Skin;
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
+import com.mygdx.td.utils.SoundUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -56,6 +62,8 @@ public class SelectLevelScreen implements Screen {
 
     private final List<LevelItem> levelItems = new ArrayList<>();
 
+    private SoundUtils soundUtils = new SoundUtils();
+
     private static class LevelItem {
         int level;
         TextButton button;
@@ -66,7 +74,7 @@ public class SelectLevelScreen implements Screen {
     public SelectLevelScreen(TDGame game) {
         this.game = game;
         OrthographicCamera camera = new OrthographicCamera();
-        stage = new Stage(new FitViewport(800, 480, camera), game.batch);
+        stage = new Stage(new StretchViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera), game.batch);
         camera.position.set(400, 240, 0);
         camera.update();
 
@@ -159,6 +167,7 @@ public class SelectLevelScreen implements Screen {
             stack.addListener(new ClickListener() {
                 @Override
                 public void clicked(InputEvent event, float x, float y) {
+                    game.playSound(game.assets.selectLevelSound);
                     if (selectedLevel != idx) {
                         selectedLevel = idx;
                         updateSelection();
@@ -210,6 +219,7 @@ public class SelectLevelScreen implements Screen {
 
         playBtn.addListener(new ClickListener() {
             @Override public void clicked(InputEvent event, float x, float y) {
+                game.playSound(game.assets.gameClickSound);
                 Gdx.app.log("SelectLevelScreen", "Play level: " + selectedLevel);
                 game.startGameWithLevel(selectedLevel);
             }
@@ -217,6 +227,7 @@ public class SelectLevelScreen implements Screen {
 
         backBtn.addListener(new ClickListener() {
             @Override public void clicked(InputEvent event, float x, float y) {
+                game.playSound(game.assets.gameClickSound);
                 game.setScreen(new MainMenuScreen(game));
             }
         });
@@ -291,7 +302,11 @@ public class SelectLevelScreen implements Screen {
         }
     }
 
-    @Override public void resize(int width, int height) { stage.getViewport().update(width,height,true); }
+    @Override
+    public void resize(int width, int height) {
+        // Nếu có stage riêng cho màn hình đó:
+        if (stage != null) stage.getViewport().update(width, height, true);
+    }
     @Override public void show() {}
     @Override public void hide() {}
     @Override public void pause() {}

@@ -1,12 +1,16 @@
 package com.mygdx.td.world;
 
 import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.audio.Sound;
 import com.mygdx.td.entities.Tower;
+import com.mygdx.td.entities.TowerType;
 import com.mygdx.td.entities.Enemy;
 import com.mygdx.td.entities.Bullet;
 import com.mygdx.td.managers.WaveManager;
 import com.badlogic.gdx.math.Vector2;
 import com.mygdx.td.Constants;
+import com.mygdx.td.TDGame;
+import com.mygdx.td.utils.SoundUtils;
 
 public class World {
 
@@ -27,21 +31,29 @@ public class World {
 
     private float bulletCleanupTimer = 0f;
 
-    // Pending shots (đợi tới fire moment)
+    private SoundUtils soundUtils = new SoundUtils();
+
     private static class PendingShot {
         Tower tower; Enemy target; float t;
         PendingShot(Tower tower, Enemy target, float t) { this.tower = tower; this.target = target; this.t = t; }
     }
     private final Array<PendingShot> pendingShots = new Array<>();
 
+    // Tham chiếu tới game hoặc Assets để phát âm thanh
+    private TDGame game;
+
     public World() {}
+
+    // Thêm hàm setGame để truyền TDGame vào nếu cần
+    public void setGame(TDGame game) {
+        this.game = game;
+    }
 
     public void update(float dt) {
         if (gameOver) return;
 
         waveManager.update(dt);
 
-        // Enemies
         for (int i = enemies.size - 1; i >= 0; i--) {
             Enemy e = enemies.get(i);
             e.update(dt);
@@ -52,31 +64,25 @@ public class World {
                 if (lives <= 0) { lives = 0; triggerGameOver(); }
             }
             if (e.dead) {
-                // remove luôn – nếu bạn dùng deathTimer trong Enemy, hãy đổi logic theo file trước đó
                 enemies.removeIndex(i);
             }
         }
 
-        // Towers
         for (Tower t : towers) {
             t.update(dt);
             Enemy target = findTarget(t.pos.x, t.pos.y, t.getRange());
-            // Cập nhật aim khi không bắn
             if (target != null && t.getState() == Tower.State.IDLE) {
-                // set hướng nhìn mượt – dùng beginAttack để chốt
                 Vector2 dir = new Vector2(target.pos).sub(t.pos);
                 if (!dir.isZero()) dir.nor();
                 t.getAimDir().set(dir);
             }
 
             if (target != null && t.canFire()) {
-                // bắt đầu chu kỳ tấn công
                 float delay = t.beginAttackTowards(target.pos.x, target.pos.y);
                 pendingShots.add(new PendingShot(t, target, delay));
             }
         }
 
-        // Pending shots – tới thời điểm bắn mới spawn đạn
         for (int i = pendingShots.size - 1; i >= 0; i--) {
             PendingShot p = pendingShots.get(i);
             p.t -= dt;
@@ -88,7 +94,6 @@ public class World {
             }
         }
 
-        // Bullets
         for (int i = bullets.size - 1; i >= 0; i--) {
             Bullet b = bullets.get(i);
             b.update(dt);
@@ -104,7 +109,6 @@ public class World {
             }
         }
 
-        // Cleanup bullets ra ngoài màn
         bulletCleanupTimer += dt;
         if (bulletCleanupTimer >= 3f) {
             bulletCleanupTimer = 0f;
@@ -124,21 +128,42 @@ public class World {
         pendingShots.clear();
     }
 
-    public boolean canAffordTower() {
-        return gold >= 50;
+    public boolean canAffordTower(int cost) {
+        return gold >= cost;
+    }
+
+    public boolean placeTowerOnSpot(TowerSpot spot, TowerType type) {
+        if (!canAffordTower(type.cost) || spot.used) return false;
+        Tower t = new Tower(spot.rect.x + spot.rect.width / 2f, spot.rect.y + spot.rect.height / 2f, spot.rect, type);
+        towers.add(t);
+        spot.used = true;
+        gold -= type.cost;
+        game.playSound(game.assets.upgradeTowerSound);
+        return true;
+    }
+
+    public boolean upgradeTower(Tower t) {
+        TowerType next = t.type.nextLevel();
+        if (next == null) return false;
+        if (gold < next.cost) return false;
+        gold -= next.cost;
+        t.upgrade();
+        game.playSound(game.assets.upgradeTowerSound);
+        return true;
     }
 
     public boolean placeTowerFree(float x, float y) {
-        if (!canAffordTower()) return false;
-        Tower t = new Tower(x, y);
+        if (!canAffordTower(50)) return false;
+        Tower t = new Tower(x, y, null, TowerType.WOOD);
         towers.add(t);
         gold -= 50;
+        game.playSound(game.assets.upgradeTowerSound);
         return true;
     }
 
     public boolean placeTowerOnSpot(TowerSpot spot) {
-        if (!canAffordTower() || spot.used) return false;
-        Tower t = new Tower(spot.rect.x + spot.rect.width / 2f, spot.rect.y + spot.rect.height / 2f, spot.rect);
+        if (!canAffordTower(50) || spot.used) return false;
+        Tower t = new Tower(spot.rect.x + spot.rect.width / 2f, spot.rect.y + spot.rect.height / 2f, spot.rect, TowerType.WOOD);
         towers.add(t);
         spot.used = true;
         gold -= 50;
@@ -164,6 +189,9 @@ public class World {
         b.speed = 300f;
         b.damage = t.getDamage();
         bullets.add(b);
+
+        // Phát âm thanh bắn đạn nếu có assets
+        game.playSound(game.assets.laserGunSound);
     }
 
     private Enemy bulletHit(Bullet b) {

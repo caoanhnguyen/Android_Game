@@ -1,5 +1,8 @@
 package com.mygdx.td.screens;
 
+import static com.mygdx.td.Constants.VIRTUAL_HEIGHT;
+import static com.mygdx.td.Constants.VIRTUAL_WIDTH;
+
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.Screen;
@@ -24,19 +27,17 @@ import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.Scaling;
-import com.badlogic.gdx.utils.viewport.FitViewport;
+import com.badlogic.gdx.utils.viewport.StretchViewport;
 import com.mygdx.td.TDGame;
 import com.badlogic.gdx.graphics.g2d.TextureAtlas;
 import com.badlogic.gdx.scenes.scene2d.ui.Skin;
+import com.mygdx.td.utils.SoundUtils;
 
 public class MainMenuScreen implements Screen {
 
     private final TDGame game;
     private final Stage stage;
     private final OrthographicCamera camera;
-
-    private boolean musicEnabled = true;
-    private boolean soundEnabled = true;
 
     private static final boolean USE_RELATIVE = false;
     private static final float ICON_SIZE_FIXED = 60f;
@@ -46,13 +47,15 @@ public class MainMenuScreen implements Screen {
     private BitmapFont titleFont;
     private NinePatch bannerNinePatch;
 
+    private final SoundUtils soundUtils = new SoundUtils();
+
     // Lưu lại kích thước gốc banner để scale tỉ lệ không méo góc
-    private float bannerOrigW, bannerOrigH;
+    private final float bannerOrigW;
 
     public MainMenuScreen(TDGame game) {
         this.game = game;
         camera = new OrthographicCamera();
-        stage = new Stage(new FitViewport(800, 480, camera), game.batch);
+        stage = new Stage(new StretchViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera), game.batch);
         camera.position.set(400, 240, 0);
         camera.update();
 
@@ -69,7 +72,7 @@ public class MainMenuScreen implements Screen {
 
         // Lưu lại kích thước gốc
         bannerOrigW = bannerNinePatch.getTotalWidth();
-        bannerOrigH = bannerNinePatch.getTotalHeight();
+        float bannerOrigH = bannerNinePatch.getTotalHeight();
 
         Gdx.input.setInputProcessor(stage);
         buildUI();
@@ -99,6 +102,7 @@ public class MainMenuScreen implements Screen {
 
         startBtn.addListener(new ClickListener() {
             @Override public void clicked(InputEvent event, float x, float y) {
+                game.playSound(game.assets.gameClickSound);
                 game.setScreen(new SelectLevelScreen(game));
             }
         });
@@ -181,16 +185,24 @@ public class MainMenuScreen implements Screen {
         musicToggleOffStyle.over = iconSkin.getDrawable("row-8-column-7");
         musicToggleOffStyle.down = iconSkin.getDrawable("row-8-column-8");
 
-        final ImageButton musicBtn = new ImageButton(musicEnabled ? musicToggleOnStyle : musicToggleOffStyle);
-        musicBtn.setChecked(!musicEnabled);
+        final ImageButton musicBtn = new ImageButton(game.musicEnabled ? musicToggleOnStyle : musicToggleOffStyle);
+        musicBtn.setChecked(!game.musicEnabled);
         musicBtn.getImage().setScaling(Scaling.stretch);
         musicBtn.getImage().setSize(iconSize * 2.0f, iconSize * 2.0f);
 
         musicBtn.addListener(new ClickListener() {
             @Override
             public void clicked(InputEvent event, float x, float y) {
-                musicEnabled = !musicEnabled;
-                musicBtn.setStyle(musicEnabled ? musicToggleOnStyle : musicToggleOffStyle);
+                game.playSound(game.assets.gameClickSound);
+                game.musicEnabled = !game.musicEnabled;
+                if(!game.musicEnabled) {
+                    // Tắt hết âm thanh đang phát
+                    game.assets.themeMusic.stop();
+                } else {
+                    // Phát âm thanh bật lại
+                    game.resumeThemeMusic();
+                }
+                musicBtn.setStyle(game.musicEnabled ? musicToggleOnStyle : musicToggleOffStyle);
             }
         });
 
@@ -205,16 +217,17 @@ public class MainMenuScreen implements Screen {
         soundToggleOffStyle.over = iconSkin.getDrawable("row-7-column-7");
         soundToggleOffStyle.down = iconSkin.getDrawable("row-7-column-8");
 
-        final ImageButton soundBtn = new ImageButton(soundEnabled ? soundToggleOnStyle : soundToggleOffStyle);
-        soundBtn.setChecked(!soundEnabled);
+        final ImageButton soundBtn = new ImageButton(game.soundEnabled ? soundToggleOnStyle : soundToggleOffStyle);
+        soundBtn.setChecked(!game.soundEnabled);
         soundBtn.getImage().setScaling(Scaling.stretch);
         soundBtn.getImage().setSize(iconSize * 2.0f, iconSize * 2.0f);
 
         soundBtn.addListener(new ClickListener() {
             @Override
             public void clicked(InputEvent event, float x, float y) {
-                soundEnabled = !soundEnabled;
-                soundBtn.setStyle(soundEnabled ? soundToggleOnStyle : soundToggleOffStyle);
+                game.soundEnabled = !game.soundEnabled;
+                game.playSound(game.assets.gameClickSound);
+                soundBtn.setStyle(game.soundEnabled ? soundToggleOnStyle : soundToggleOffStyle);
             }
         });
 
@@ -310,7 +323,11 @@ public class MainMenuScreen implements Screen {
         }
     }
 
-    @Override public void resize(int width, int height) { stage.getViewport().update(width,height,true); }
+    @Override
+    public void resize(int width, int height) {
+        // Nếu có stage riêng cho màn hình đó:
+        if (stage != null) stage.getViewport().update(width, height, true);
+    }
     @Override public void show() {}
     @Override public void hide() {}
     @Override public void pause() {}

@@ -1,5 +1,8 @@
 package com.mygdx.td.screens;
 
+import static com.mygdx.td.Constants.VIRTUAL_HEIGHT;
+import static com.mygdx.td.Constants.VIRTUAL_WIDTH;
+
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.graphics.Color;
@@ -8,7 +11,7 @@ import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.math.Interpolation;
-import com.badlogic.gdx.utils.viewport.FitViewport;
+import com.badlogic.gdx.utils.viewport.StretchViewport;
 import com.mygdx.td.TDGame;
 
 /**
@@ -19,7 +22,7 @@ public class SplashScreen implements Screen {
 
     private final TDGame game;
     private final OrthographicCamera camera;
-    private final FitViewport viewport;
+    private final StretchViewport viewport;
 
     private float time = 0f;
 
@@ -55,7 +58,7 @@ public class SplashScreen implements Screen {
     public SplashScreen(TDGame game) {
         this.game = game;
         camera = new OrthographicCamera();
-        viewport = new FitViewport(800, 480, camera);
+        viewport = new StretchViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
         camera.position.set(400, 240, 0);
         camera.update();
 
@@ -187,7 +190,10 @@ public class SplashScreen implements Screen {
         font.setColor(1,1,1,1);
     }
 
-    @Override public void resize(int width, int height) { viewport.update(width,height,true); }
+    @Override
+    public void resize(int width, int height) {
+        viewport.update(width, height, true);
+    }
     @Override public void show() {}
     @Override public void hide() {}
     @Override public void pause() {}

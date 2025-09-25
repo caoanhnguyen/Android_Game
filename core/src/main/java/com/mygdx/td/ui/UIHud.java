@@ -6,8 +6,10 @@ import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.NinePatch;
 import com.badlogic.gdx.graphics.g2d.TextureAtlas;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
 import com.badlogic.gdx.scenes.scene2d.Stage;
+import com.badlogic.gdx.scenes.scene2d.actions.Actions;
 import com.badlogic.gdx.scenes.scene2d.ui.Image;
 import com.badlogic.gdx.scenes.scene2d.ui.ImageButton;
 import com.badlogic.gdx.scenes.scene2d.ui.Label;
@@ -17,23 +19,25 @@ import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
 import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
+import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.Scaling;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.mygdx.td.Constants;
 import com.mygdx.td.TDGame;
-
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
+import com.mygdx.td.entities.TowerType;
+import com.mygdx.td.entities.Tower;
+import com.mygdx.td.utils.SoundUtils;
+import com.mygdx.td.world.World;
 
 /**
- * HUD góc trên trái (heart, gold, wave) + góc trên phải (pause/play toggle, settings).
- * Chữ "WAVE" dùng font_title.fnt như yêu cầu.
+ * HUD hiển thị: tim (lives), vàng (gold), wave và các nút Play/Pause, Settings.
+ * Có popup chọn trụ và popup nâng cấp trụ.
  */
 public class UIHud {
 
     private final TDGame game;
-    private final Object world;
+    private final World world;
     private final Stage stage;
 
     // Assets
@@ -41,12 +45,14 @@ public class UIHud {
     private BitmapFont font, waveTitleFont;
     private NinePatch bannerPatch;
     private Skin iconSkin;
+    private TextureAtlas towerIconAtlas;
 
     // UI nodes
     private Label goldLabel, heartLabel, waveLabel;
 
     // State
-    private boolean paused = false;
+    // Mặc định paused = true để nút hiển thị icon "Play" khi vào game.
+    private boolean paused = true;
     public Runnable onPauseToggle;
     public Runnable onStartWave;
     public Runnable onOpenSettings;
@@ -59,11 +65,22 @@ public class UIHud {
     private static final float SIDE_PAD = 12f;
     private static final float RIGHT_BTN_SIZE = 44f;
 
-    public UIHud(TDGame game, Object world) {
+    private SoundUtils soundUtils = new SoundUtils();
+
+    // Tower selection
+    public interface TowerSelectListener { void onTowerSelected(TowerType selectedType); }
+    private TowerType[] towerTypes;
+    private TowerSelectListener towerSelectListener;
+    private Table towerPopupHUD;
+    private Table towerUpgradeHUD;
+
+    public void setTowerTypes(TowerType[] types) { this.towerTypes = types; }
+    public void setTowerSelectListener(TowerSelectListener listener) { this.towerSelectListener = listener; }
+
+    public UIHud(TDGame game, World world) {
         this.game = game;
         this.world = world;
         this.stage = new Stage(new FitViewport(Constants.VIRTUAL_WIDTH, Constants.VIRTUAL_HEIGHT));
-
         loadAssets();
         buildUI();
     }
@@ -73,30 +90,23 @@ public class UIHud {
         try {
             waveTitleFont = new BitmapFont(Gdx.files.internal("font/font_title.fnt"));
             waveTitleFont.setUseIntegerPositions(false);
-        } catch (Throwable t) {
-            waveTitleFont = font;
-        }
+        } catch (Throwable t) { waveTitleFont = font; }
 
         try {
             Texture bannerTex = new Texture(Gdx.files.internal("ui/banner_11.9.png"));
             bannerTex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
             bannerPatch = new NinePatch(bannerTex, 16, 16, 16, 16);
-        } catch (Throwable t) {
-            bannerPatch = null;
-        }
+        } catch (Throwable t) { bannerPatch = null; }
 
         try {
             iconCashTex = new Texture(Gdx.files.internal("ui/icon_cash.png"));
             iconCashTex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
-        } catch (Throwable t) {
-            iconCashTex = null;
-        }
+        } catch (Throwable t) { iconCashTex = null; }
+
         try {
             iconHeartTex = new Texture(Gdx.files.internal("ui/icon_health.png"));
             iconHeartTex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
-        } catch (Throwable t) {
-            iconHeartTex = null;
-        }
+        } catch (Throwable t) { iconHeartTex = null; }
 
         try {
             TextureAtlas atlas = new TextureAtlas(Gdx.files.internal("ui/orange_icon_buttons.atlas"));
@@ -104,8 +114,13 @@ public class UIHud {
                 tex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
             }
             iconSkin = new Skin(atlas);
+        } catch (Throwable t) { iconSkin = null; }
+
+        try {
+            towerIconAtlas = new TextureAtlas(Gdx.files.internal("towers/tower_icons.atlas"));
         } catch (Throwable t) {
-            iconSkin = null;
+            towerIconAtlas = null;
+            Gdx.app.error("UIHud", "Không load được towers/tower_icons.atlas: " + t.getMessage());
         }
     }
 
@@ -115,7 +130,7 @@ public class UIHud {
         root.top().padTop(TOP_PAD).padLeft(SIDE_PAD).padRight(SIDE_PAD);
         stage.addActor(root);
 
-        // ===== Left top: Info (banner + heart/gold/wave) =====
+        // Banner thông tin bên trái
         Stack infoStack = new Stack();
         infoStack.setSize(INFO_W, INFO_H);
 
@@ -128,9 +143,8 @@ public class UIHud {
 
         Table infoTable = new Table();
         infoTable.defaults().center();
-        infoTable.padLeft(24f).padRight(12f); // Sửa: padLeft tăng để cân giữa, padRight giảm
+        infoTable.padLeft(36f).padRight(12f);
 
-        // Heart
         if (iconHeartTex != null) {
             Image heartIcon = new Image(iconHeartTex);
             heartIcon.setScaling(Scaling.fit);
@@ -141,7 +155,6 @@ public class UIHud {
         heartLabel.setFontScale(1.0f);
         infoTable.add(heartLabel).minWidth(40).left().padRight(10f);
 
-        // Gold
         if (iconCashTex != null) {
             Image cashIcon = new Image(iconCashTex);
             cashIcon.setScaling(Scaling.fit);
@@ -152,43 +165,38 @@ public class UIHud {
         goldLabel.setFontScale(1.0f);
         infoTable.add(goldLabel).minWidth(60).left().padRight(10f);
 
-        // ======= Thêm chữ "WAVE" dùng font title nhỏ lại =======
         Label waveTitle = new Label("WAVE", new Label.LabelStyle(waveTitleFont, new Color(1f, 0.90f, 0.10f, 1f)));
         waveTitle.setAlignment(Align.center);
-        waveTitle.setFontScale(0.65f); // nhỏ lại
-        infoTable.add(waveTitle).minWidth(66).padRight(24f); // cách xa số wave hơn
+        waveTitle.setFontScale(0.65f);
+        infoTable.add(waveTitle).minWidth(66).padRight(24f);
 
-        // Wave số
-        waveLabel = new Label("0/0", new Label.LabelStyle(font, Color.WHITE));
+        waveLabel = new Label("0", new Label.LabelStyle(font, Color.WHITE));
         waveLabel.setAlignment(Align.left);
         waveLabel.setFontScale(1.0f);
         infoTable.add(waveLabel).minWidth(54).left();
 
         infoStack.add(infoTable);
 
-        // ===== Right top: Buttons (Pause/Play toggle, Settings) =====
+        // Cụm nút điều khiển bên phải
         Table controls = new Table();
         controls.right().top();
 
-        // --- Pause/Play toggle button ---
         ImageButton pausePlayBtn = createPausePlayButton();
         controls.add(pausePlayBtn).size(RIGHT_BTN_SIZE, RIGHT_BTN_SIZE).padLeft(6f);
 
-        // --- Settings button giống mainmenu ---
         ImageButton setBtn = createSettingsButton();
         controls.add(setBtn).size(RIGHT_BTN_SIZE, RIGHT_BTN_SIZE).padLeft(6f);
 
-        // Compose top bar
-        root.add(infoStack).width(INFO_W).height(INFO_H).center(); // Sửa: căn giữa infoStack trong banner
-        root.add().expandX(); // spacer
+        root.add(infoStack).width(INFO_W).height(INFO_H).center();
+        root.add().expandX();
         root.add(controls).right().padRight(4f);
         root.row();
     }
 
     private ImageButton createPausePlayButton() {
         if (iconSkin == null) return new ImageButton(new Image().getDrawable());
-        Drawable pauseDrawable = safeDrawable("row-9-column-4"); // icon pause
-        Drawable playDrawable = safeDrawable("row-4-column-4");  // icon play
+        Drawable pauseDrawable = safeDrawable("row-9-column-4");  // Pause icon
+        Drawable playDrawable  = safeDrawable("row-4-column-4");  // Play icon
 
         ImageButton.ImageButtonStyle style = new ImageButton.ImageButtonStyle();
         style.up = paused ? playDrawable : pauseDrawable;
@@ -196,16 +204,16 @@ public class UIHud {
         style.down = style.up;
 
         final ImageButton btn = new ImageButton(style);
-
         btn.addListener(new ClickListener() {
             @Override public void clicked(InputEvent event, float x, float y) {
+                game.playSound(game.assets.gameClickSound);
                 paused = !paused;
                 style.up = paused ? playDrawable : pauseDrawable;
                 style.over = style.up;
                 style.down = style.up;
                 btn.setStyle(style);
-
                 if (onPauseToggle != null) onPauseToggle.run();
+                // Khi chuyển sang Playing thì bắt đầu wave nếu có callback
                 if (!paused && onStartWave != null) onStartWave.run();
             }
         });
@@ -226,6 +234,7 @@ public class UIHud {
         final ImageButton btn = new ImageButton(style);
         btn.addListener(new ClickListener() {
             @Override public void clicked(InputEvent event, float x, float y) {
+                game.playSound(game.assets.gameClickSound);
                 if (onOpenSettings != null) onOpenSettings.run();
             }
         });
@@ -237,90 +246,186 @@ public class UIHud {
         catch (Throwable t) { return null; }
     }
 
-    public void act(float delta) {
-        stage.act(delta);
+    public void act(float delta) { stage.act(delta); }
+    public void draw() { stage.draw(); }
+    public Stage getStage() { return stage; }
+
+    // ===================== Tower selection popup =====================
+
+    private void buildTowerPopupHUD() {
+        if (towerPopupHUD != null) towerPopupHUD.remove();
+        if (towerTypes == null || towerTypes.length == 0) return;
+
+        float cellW = 110, cellH = 130, n = towerTypes.length;
+        float pad = 16, popupW = n * cellW + (n + 1) * pad, popupH = cellH + 42;
+
+        towerPopupHUD = new Table();
+        towerPopupHUD.setSize(popupW, popupH);
+
+        float screenW = stage.getViewport().getWorldWidth();
+        float padBottom = 32;
+        towerPopupHUD.setPosition((screenW - popupW) / 2f, padBottom);
+
+        if (bannerPatch != null)
+            towerPopupHUD.setBackground(new NinePatchDrawable(bannerPatch));
+
+        Table row = new Table();
+        for (TowerType type : towerTypes) {
+            TextureRegion icon = null;
+            if (towerIconAtlas != null && type.iconRegion != null) {
+                icon = towerIconAtlas.findRegion(type.iconRegion);
+            }
+            if (icon == null) {
+                Gdx.app.error("UIHud", "Không tìm thấy region icon: " + type.iconRegion + " trong towers/tower_icons.atlas");
+            }
+
+            Drawable btnDrawable = (icon != null)
+                ? new TextureRegionDrawable(icon)
+                : (bannerPatch != null ? new NinePatchDrawable(bannerPatch) : new Image().getDrawable());
+
+            ImageButton btn = new ImageButton(btnDrawable);
+            btn.getImageCell().size(96, 96);
+
+            Table priceTable = new Table();
+            if (iconCashTex != null) {
+                Image cashIcon = new Image(iconCashTex);
+                cashIcon.setScaling(Scaling.fit);
+                priceTable.add(cashIcon).size(22, 22).padRight(2);
+            }
+            Label priceLabel = new Label("" + type.cost, new Label.LabelStyle(font, Color.valueOf("ffe96b")));
+            priceLabel.setFontScale(1.1f);
+            priceTable.add(priceLabel);
+
+            Label nameLabel = new Label(type.name, new Label.LabelStyle(font, Color.WHITE));
+            nameLabel.setFontScale(1.1f);
+
+            Table cell = new Table();
+            cell.add(btn).size(80, 80).padTop(10).row();
+            cell.add(nameLabel).padTop(5f).row();
+            cell.add(priceTable).padTop(8).padBottom(20);
+
+            btn.addListener(new ClickListener() {
+                @Override
+                public void clicked(InputEvent event, float x, float y) {
+                    game.playSound(game.assets.gameClickSound);
+                    towerPopupHUD.addAction(Actions.sequence(
+                        Actions.fadeOut(0.16f),
+                        Actions.run(() -> towerPopupHUD.setVisible(false))
+                    ));
+                    if (towerSelectListener != null) towerSelectListener.onTowerSelected(type);
+                }
+            });
+
+            row.add(cell).pad(pad, pad, pad, pad);
+        }
+
+        towerPopupHUD.add(row).padTop(10).padBottom(16);
+        towerPopupHUD.setVisible(false);
+        stage.addActor(towerPopupHUD);
     }
 
-    public void draw() {
-        stage.draw();
+    public void showTowerPopupHUD() {
+        buildTowerPopupHUD();
+        if (towerPopupHUD != null) {
+            towerPopupHUD.setVisible(true);
+            towerPopupHUD.setColor(1,1,1,0);
+            towerPopupHUD.addAction(Actions.fadeIn(0.2f));
+        }
     }
 
-    public Stage getStage() {
-        return stage;
+    public void hideTowerPopupHUD() {
+        if (towerPopupHUD != null) towerPopupHUD.setVisible(false);
     }
 
-    // Cập nhật HUD
+    // ===================== Tower upgrade popup =====================
+
+    public void showUpgradePopupHUD(Tower tower, Runnable onUpgrade) {
+        if (towerUpgradeHUD != null) towerUpgradeHUD.remove();
+
+        TowerType nextType = tower.type.nextLevel();
+        float popupW = 420, popupH = 180;
+
+        towerUpgradeHUD = new Table();
+        towerUpgradeHUD.setSize(popupW, popupH);
+
+        float screenW = stage.getViewport().getWorldWidth();
+        float padBottom = 32;
+        towerUpgradeHUD.setPosition((screenW - popupW) / 2f, padBottom);
+
+        if (bannerPatch != null)
+            towerUpgradeHUD.setBackground(new NinePatchDrawable(bannerPatch));
+
+        Table content = new Table();
+        content.defaults().center();
+
+        Label levelLabel = new Label("LEVEL: " + (tower.getUpgradeLevel() + 1), new Label.LabelStyle(font, Color.valueOf("ffe96b")));
+        levelLabel.setFontScale(1.05f);
+        levelLabel.setAlignment(Align.center);
+        content.add(levelLabel).width(popupW - 16).padTop(14).center().row();
+
+        if (nextType != null) {
+            Label nextLabel = new Label("NEXT: " + nextType.name + " (+" + nextType.damage + " DMG)", new Label.LabelStyle(font, Color.valueOf("36e7e2")));
+            nextLabel.setFontScale(1f);
+            nextLabel.setAlignment(Align.center);
+            nextLabel.setWrap(true);
+            content.add(nextLabel).width(popupW - 16).padTop(8).center().row();
+
+            Table priceAndBtnTable = new Table();
+            priceAndBtnTable.defaults().center();
+            if (iconCashTex != null) {
+                Image cashIcon = new Image(iconCashTex);
+                cashIcon.setScaling(Scaling.fit);
+                priceAndBtnTable.add(cashIcon).size(22, 22).padRight(3).center();
+            }
+            Label priceLabel = new Label("" + nextType.cost, new Label.LabelStyle(font, Color.valueOf("ffe96b")));
+            priceLabel.setFontScale(1.05f);
+            priceLabel.setAlignment(Align.center);
+            priceAndBtnTable.add(priceLabel).padRight(14);
+
+            Label lblUp = new Label("UPGRADE", new Label.LabelStyle(font, Color.WHITE));
+            lblUp.setFontScale(1.05f);
+            lblUp.setAlignment(Align.center);
+            lblUp.addListener(new ClickListener() {
+                @Override
+                public void clicked(InputEvent event, float x, float y) {
+                    towerUpgradeHUD.setVisible(false);
+                    if (onUpgrade != null) onUpgrade.run();
+                }
+            });
+            priceAndBtnTable.add(lblUp).padLeft(10);
+
+            content.add(priceAndBtnTable).width(popupW - 16).padTop(12).center().row();
+        } else {
+            Label maxLabel = new Label("MAX LEVEL", new Label.LabelStyle(font, Color.valueOf("ff5959")));
+            maxLabel.setFontScale(1.08f);
+            maxLabel.setAlignment(Align.center);
+            content.add(maxLabel).width(popupW - 16).padTop(12).center().row();
+        }
+
+        towerUpgradeHUD.add(content).expand().center();
+        towerUpgradeHUD.setVisible(false);
+        stage.addActor(towerUpgradeHUD);
+        towerUpgradeHUD.setVisible(true);
+        towerUpgradeHUD.setColor(1, 1, 1, 0);
+        towerUpgradeHUD.addAction(Actions.fadeIn(0.19f));
+    }
+
+    public void hideUpgradePopupHUD() {
+        if (towerUpgradeHUD != null) towerUpgradeHUD.setVisible(false);
+    }
+
+    // ===================== HUD update / state =====================
+
     public void updateHudValues(boolean inWave) {
-        int gold = tryReadInt(world, "gold", "coins", "money");
-        int hearts = tryReadInt(world, "hearts", "lives", "hp", "health");
-
-        Object waveMgr = tryReadObject(world, "waveManager");
-        int curWave = readWaveCurrent(waveMgr);
-        int totalWave = readWaveTotal(waveMgr);
-
-        if (goldLabel != null) goldLabel.setText(String.valueOf(gold));
-        if (heartLabel != null) heartLabel.setText(String.valueOf(hearts));
+        if (goldLabel != null) goldLabel.setText(String.valueOf(world.gold));
+        if (heartLabel != null) heartLabel.setText(String.valueOf(world.lives));
         if (waveLabel != null) {
-            if (totalWave > 0) waveLabel.setText(Math.max(0, curWave) + "/" + totalWave);
-            else waveLabel.setText(String.valueOf(Math.max(0, curWave)));
+            int cur = (world.waveManager != null) ? world.waveManager.getCurrentWave() : 0;
+            waveLabel.setText(String.valueOf(cur));
         }
     }
 
-    // ===== Reflection helpers =====
-    private int tryReadInt(Object obj, String... names) {
-        if (obj == null) return 0;
-        for (String n : names) {
-            try {
-                Field f = obj.getClass().getField(n);
-                f.setAccessible(true);
-                return f.getInt(obj);
-            } catch (Throwable ignored) {}
-        }
-        return 0;
-    }
-
-    private Object tryReadObject(Object obj, String name) {
-        if (obj == null) return null;
-        try {
-            Field f = obj.getClass().getField(name);
-            f.setAccessible(true);
-            return f.get(obj);
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    private int readWaveCurrent(Object mgr) {
-        if (mgr == null) return 0;
-        Integer byMethod = tryInvokeIntObj(mgr, "getCurrentWave", "current", "getWave", "getIndex");
-        if (byMethod != null) return byMethod;
-        int byField = tryReadInt(mgr, "currentWave", "waveIndex", "wave");
-        return byField;
-    }
-
-    private int readWaveTotal(Object mgr) {
-        if (mgr == null) return 0;
-        Integer byMethod = tryInvokeIntObj(mgr, "getTotalWaves", "getWavesCount", "getWaveCount", "getMaxWave", "size");
-        if (byMethod != null) return byMethod;
-        int byField = tryReadInt(mgr, "totalWaves", "waves", "maxWave", "count");
-        return byField;
-    }
-
-    private Integer tryInvokeIntObj(Object obj, String... methods) {
-        for (String mname : methods) {
-            try {
-                Method m = obj.getClass().getMethod(mname);
-                Object r = m.invoke(obj);
-                if (r instanceof Integer) return (Integer) r;
-                if (r instanceof Number) return ((Number) r).intValue();
-            } catch (Throwable ignored) {}
-        }
-        return null;
-    }
-
-    public boolean isPaused() {
-        return paused;
-    }
+    public boolean isPaused() { return paused; }
 
     public void dispose() {
         stage.dispose();
@@ -329,5 +434,6 @@ public class UIHud {
         if (bannerPatch != null && bannerPatch.getTexture() != null) bannerPatch.getTexture().dispose();
         if (iconSkin != null) iconSkin.dispose();
         if (waveTitleFont != null && waveTitleFont != font) waveTitleFont.dispose();
+        if (towerIconAtlas != null) towerIconAtlas.dispose();
     }
 }

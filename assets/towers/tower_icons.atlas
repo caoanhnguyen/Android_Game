@@ -1,0 +1,16 @@
+tower_icons.png
+size: 350, 130
+format: RGBA8888
+filter: Linear, Linear
+repeat: none
+pma: false
+tower1_icon
+  bounds: 0, 0, 70, 130
+tower2_icon
+  bounds: 70, 0, 70, 130
+tower3_icon
+  bounds: 140, 0, 70, 130
+tower4_icon
+  bounds: 210, 0, 70, 130
+tower5_icon
+  bounds: 280, 0, 70, 130
