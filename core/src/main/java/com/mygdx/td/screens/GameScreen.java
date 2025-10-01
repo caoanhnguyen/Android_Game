@@ -55,6 +55,7 @@ import com.mygdx.td.save.SaveManager;
 import com.mygdx.td.ui.UIHud;
 import com.mygdx.td.world.TowerSpot;
 import com.mygdx.td.world.World;
+import com.mygdx.td.screens.SelectLevelScreen;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -104,10 +105,6 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float HP_BAR_WIDTH = 40f;
     private static final float HP_BAR_HEIGHT = 6f;
     private static final float HP_BAR_Y_OFFSET = 38f;
-    private static final int GOLD_PER_KILL = 5;
-
-    // ========= Level & Save/Resume =========
-    private final int level; // Lưu level hiện tại để save/resume đúng map
 
     // ========= In-Game Settings Overlay =========
     private Stage overlayStage;
@@ -131,6 +128,10 @@ public class GameScreen extends InputAdapter implements Screen {
 
     private boolean prevMusicEnabled, prevSoundEnabled;
     private float prevMusicVolume, prevSoundVolume;
+
+    private final int level;
+
+    private boolean victoryShown = false;
 
     public GameScreen(TDGame game) { this(game, 1); }
 
@@ -169,10 +170,8 @@ public class GameScreen extends InputAdapter implements Screen {
         };
         hud.onPauseToggle = () -> {
             gamePaused = hud.isPaused();
-            Gdx.app.log("GAME", gamePaused ? "Paused" : "Playing");
             if (!gamePaused && world.waveManager != null && !world.waveManager.isInWave() && !world.gameOver) {
                 world.waveManager.startNextWave();
-                Gdx.app.log("GAME", "Auto start wave " + world.waveManager.getCurrentWave());
             }
         };
         hud.onOpenSettings = this::toggleSettingsOverlay;
@@ -183,7 +182,7 @@ public class GameScreen extends InputAdapter implements Screen {
         overlayStage = new Stage(new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT), game.batch);
         buildSettingsOverlay();
 
-        // Thử khôi phục checkpoint nếu có và đúng level
+        // Resume checkpoint nếu có
         attemptResumeFromCheckpoint();
 
         InputMultiplexer mux = new InputMultiplexer();
@@ -251,37 +250,27 @@ public class GameScreen extends InputAdapter implements Screen {
     private void attemptResumeFromCheckpoint() {
         GameState s = SaveManager.loadCheckpoint();
         if (s == null) return;
-        if (s.level != this.level) {
-            Gdx.app.log("Save/Resume", "Checkpoint level " + s.level + " != current " + level + ", skip resume");
-            return;
-        }
+        if (s.level != this.level) return;
         applyGameState(s);
     }
 
     private void applyGameState(GameState s) {
-        // Dọn sạch về trạng thái đầu level (không reset gold/lives mặc định vì sẽ set theo save)
         world.reset();
 
-        // Dựng lại trụ
         for (GameState.TowerSave ts : s.towers) {
             Rectangle rect = ts.hasRect ? new Rectangle(ts.rx, ts.ry, ts.rw, ts.rh) : null;
             world.addTowerRestored(ts.x, ts.y, rect, ts.typeLevel);
         }
 
-        // Khôi phục vàng & máu
         world.gold = s.gold;
         world.lives = s.lives;
 
-        // Đặt WaveManager về đúng "nextWave" và đứng ngoài wave
         world.waveManager.resumeAtWave(s.nextWave);
-
-        Gdx.app.log("Save/Resume", "Resumed level=" + s.level + " nextWave=" + s.nextWave + " towers=" + s.towers.size);
     }
 
     private int computeNextWaveForSave() {
         int cur = world.waveManager.getCurrentWave();
         boolean in = world.waveManager.isInWave();
-        // Nếu đang giữa wave -> resume lại chính wave đó; nếu đang giữa khoảng nghỉ -> sang wave tiếp theo
         return Math.max(1, cur + (in ? 0 : 1));
     }
 
@@ -308,10 +297,6 @@ public class GameScreen extends InputAdapter implements Screen {
         for (Enemy e : toMove) {
             EnemyVisual v = enemyVisuals.remove(e);
             if (v != null) {
-                if (!rewardedEnemies.contains(e) && e.isDead() && !e.reachedEnd) {
-                    world.gold += GOLD_PER_KILL;
-                    rewardedEnemies.add(e);
-                }
                 if (v.isReadyToRemove(e)) {
                     v.dispose();
                 } else {
@@ -319,7 +304,6 @@ public class GameScreen extends InputAdapter implements Screen {
                 }
             }
         }
-        rewardedEnemies.removeIf(e -> !dyingEnemyVisuals.containsKey(e));
     }
 
     private void updateEnemyVisuals(float dt) {
@@ -337,21 +321,18 @@ public class GameScreen extends InputAdapter implements Screen {
         for (Enemy e : toRemove) dyingEnemyVisuals.remove(e);
     }
 
-    private void applyKillRewards() {
-        for (Enemy e : world.enemies) {
-            if (e.isDead() && !rewardedEnemies.contains(e)) {
-                world.gold += GOLD_PER_KILL;
-                rewardedEnemies.add(e);
-            }
-        }
-        rewardedEnemies.removeIf(e -> !world.enemies.contains(e, true) && !dyingEnemyVisuals.containsKey(e));
-    }
-
     @Override
     public void render(float delta) {
         if (!gamePaused) {
             world.update(delta);
-            applyKillRewards();
+
+            // Victory dialog
+            if (world.isVictory() && !victoryShown) {
+                victoryShown = true;
+                SaveManager.clearCheckpoint(); // clear checkpoint khi thắng
+                showVictoryDialog();
+            }
+
             syncEnemyVisuals();
             updateEnemyVisuals(delta);
         }
@@ -728,35 +709,58 @@ public class GameScreen extends InputAdapter implements Screen {
 
     private void hideSettingsOverlay() { setOverlayVisible(false); }
 
-    @Override public void resize(int w, int h) {
-        viewport.update(w, h, true);
-        camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0);
-        camera.update();
-        if (hud != null) hud.getStage().getViewport().update(w, h, true);
-        if (overlayStage != null) overlayStage.getViewport().update(w, h, true);
-    }
-    @Override public void show() {}
-    @Override public void hide() {}
-    @Override public void pause() { gamePaused = true; }
-    @Override public void resume() { gamePaused = false; }
-    @Override public void dispose() {
-        hud.dispose();
-        if (mapRenderer != null) mapRenderer.dispose();
-        if (tiledMap != null) tiledMap.dispose();
-        for (TowerVisual v : towerVisuals.values()) v.dispose();
-        towerVisuals.clear();
-        for (EnemyVisual v : enemyVisuals.values()) v.dispose();
-        enemyVisuals.clear();
-        for (EnemyVisual v : dyingEnemyVisuals.values()) v.dispose();
-        dyingEnemyVisuals.clear();
+    // ========= Exit confirm & Victory =========
 
-        if (overlayStage != null) {
-            overlayStage.dispose();
-            overlayStage = null;
-        }
+    private void showVictoryDialog() {
+        final float DIALOG_W = 520f, DIALOG_H = 220f;
+        final Table dialog = new Table();
+        dialog.setBackground(frameDrawable);
+        dialog.pad(16f);
+        dialog.setSize(DIALOG_W, DIALOG_H);
+
+        Label.LabelStyle ls = new Label.LabelStyle(titleFont, com.badlogic.gdx.graphics.Color.WHITE);
+        Label msg = new Label("VICTORY!\nYOU CLEARED ALL 20 WAVES", ls);
+        msg.setAlignment(Align.center);
+        msg.setFontScale(0.9f);
+        msg.setWrap(true);
+
+        Table msgWrap = new Table();
+        msgWrap.add(msg).width(DIALOG_W - 48f).center();
+
+        TextButton.TextButtonStyle okStyle = new TextButton.TextButtonStyle();
+        okStyle.up   = buttonSkin.getDrawable("SAVE_over");
+        okStyle.over = buttonSkin.getDrawable("SAVE_up");
+        okStyle.down = buttonSkin.getDrawable("SAVE_down");
+        okStyle.font = titleFont;
+
+        TextButton ok = new TextButton("", okStyle);
+
+        Drawable measure = buttonSkin.getDrawable("START_up");
+        float w = measure.getMinWidth() * 1.35f;
+        float h = measure.getMinHeight() * 1.35f;
+
+        Table btns = new Table();
+        btns.add(ok).size(w, h);
+
+        dialog.add(msgWrap).expand().fill().center().row();
+        dialog.add(btns).center().padTop(12);
+
+        dialog.setPosition(
+            overlayStage.getViewport().getWorldWidth() / 2f - dialog.getWidth() / 2f,
+            overlayStage.getViewport().getWorldHeight() / 2f - dialog.getHeight() / 2f
+        );
+
+        overlayStage.addActor(dialog);
+
+        ok.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) {
+                dialog.remove();
+                world.clearVictory();
+                exitToSelectLevel();
+            }
+        });
     }
 
-    // ========= Confirm dialog (dùng font_title, đã wrap) =========
     private void showExitToSelectConfirm() {
         final float DIALOG_W = 520f, DIALOG_H = 220f;
         final Table dialog = new Table();
@@ -808,10 +812,8 @@ public class GameScreen extends InputAdapter implements Screen {
 
         ok.addListener(new ClickListener() {
             @Override public void clicked(InputEvent event, float x, float y) {
-                // Lưu checkpoint trước khi thoát
                 int nextWave = computeNextWaveForSave();
                 SaveManager.saveCheckpoint(level, world, nextWave);
-
                 dialog.remove();
                 exitToSelectLevel();
             }
@@ -826,5 +828,33 @@ public class GameScreen extends InputAdapter implements Screen {
     private void exitToSelectLevel() {
         setOverlayVisible(false);
         game.setScreen(new SelectLevelScreen(game));
+    }
+
+    @Override public void resize(int w, int h) {
+        viewport.update(w, h, true);
+        camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0);
+        camera.update();
+        if (hud != null) hud.getStage().getViewport().update(w, h, true);
+        if (overlayStage != null) overlayStage.getViewport().update(w, h, true);
+    }
+    @Override public void show() {}
+    @Override public void hide() {}
+    @Override public void pause() { gamePaused = true; }
+    @Override public void resume() { gamePaused = false; }
+    @Override public void dispose() {
+        hud.dispose();
+        if (mapRenderer != null) mapRenderer.dispose();
+        if (tiledMap != null) tiledMap.dispose();
+        for (TowerVisual v : towerVisuals.values()) v.dispose();
+        towerVisuals.clear();
+        for (EnemyVisual v : enemyVisuals.values()) v.dispose();
+        enemyVisuals.clear();
+        for (EnemyVisual v : dyingEnemyVisuals.values()) v.dispose();
+        dyingEnemyVisuals.clear();
+
+        if (overlayStage != null) {
+            overlayStage.dispose();
+            overlayStage = null;
+        }
     }
 }

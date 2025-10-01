@@ -45,7 +45,7 @@ public class Tower {
             setRange(type.range);
         }
         this.state = State.UPGRADING;
-        this.stateTime = 0f;
+        this.stateTime = 2f;
     }
 
     public void update(float dt) {

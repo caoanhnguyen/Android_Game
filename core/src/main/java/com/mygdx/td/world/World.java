@@ -1,7 +1,6 @@
 package com.mygdx.td.world;
 
 import com.badlogic.gdx.utils.Array;
-import com.badlogic.gdx.audio.Sound;
 import com.mygdx.td.entities.Tower;
 import com.mygdx.td.entities.TowerType;
 import com.mygdx.td.entities.Enemy;
@@ -11,7 +10,6 @@ import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Rectangle;
 import com.mygdx.td.Constants;
 import com.mygdx.td.TDGame;
-import com.mygdx.td.utils.SoundUtils;
 
 public class World {
 
@@ -32,8 +30,6 @@ public class World {
 
     private float bulletCleanupTimer = 0f;
 
-    private SoundUtils soundUtils = new SoundUtils();
-
     private static class PendingShot {
         Tower tower; Enemy target; float t;
         PendingShot(Tower tower, Enemy target, float t) { this.tower = tower; this.target = target; this.t = t; }
@@ -43,12 +39,12 @@ public class World {
     // Tham chiếu tới game hoặc Assets để phát âm thanh
     private TDGame game;
 
+    // Victory flag
+    private boolean victory = false;
+
     public World() {}
 
-    // Thêm hàm setGame để truyền TDGame vào nếu cần
-    public void setGame(TDGame game) {
-        this.game = game;
-    }
+    public void setGame(TDGame game) { this.game = game; }
 
     public void update(float dt) {
         if (gameOver) return;
@@ -64,7 +60,7 @@ public class World {
                 e.dead = true;
                 if (lives <= 0) { lives = 0; triggerGameOver(); }
             }
-            if (e.dead) {
+            if (e.isRemovable()) {
                 enemies.removeIndex(i);
             }
         }
@@ -105,6 +101,10 @@ public class World {
             Enemy hit = bulletHit(b);
             if (hit != null) {
                 hit.damage(b.damage);
+                if (hit.dead) {
+                    // Thưởng vàng theo enemy
+                    gold += Math.max(0, hit.getGoldReward());
+                }
                 b.dead = true;
                 bullets.removeIndex(i);
             }
@@ -121,6 +121,11 @@ public class World {
                 }
             }
         }
+
+        // Kiểm tra Victory: đã hoàn tất tất cả wave, không còn enemy alive
+        if (!victory && waveManager.isAllWavesCompleted() && !waveManager.isInWave() && enemies.size == 0) {
+            victory = true;
+        }
     }
 
     private void triggerGameOver() {
@@ -129,9 +134,7 @@ public class World {
         pendingShots.clear();
     }
 
-    public boolean canAffordTower(int cost) {
-        return gold >= cost;
-    }
+    public boolean canAffordTower(int cost) { return gold >= cost; }
 
     public boolean placeTowerOnSpot(TowerSpot spot, TowerType type) {
         if (!canAffordTower(type.cost) || spot.used) return false;
@@ -216,41 +219,40 @@ public class World {
         lives = 20;
         lifeLostFlag = false;
         gameOver = false;
+        victory = false;
         for (TowerSpot s : towerSpots) s.used = false;
     }
 
     // ============ Restore support ============
     // Dùng khi khôi phục checkpoint: thêm trụ không trừ vàng, đánh dấu spot nếu có.
-    public Tower addTowerRestored(float x, float y, Rectangle rect, int upgradeLevel) {
+    public void addTowerRestored(float x, float y, Rectangle rect, int upgradeLevel) {
         Tower t = new Tower(x, y, rect, TowerType.WOOD);
-        // Nâng cấp đến đúng level đã lưu (không trừ vàng)
         for (int i = 0; i < upgradeLevel; i++) {
-            if (t.type.nextLevel() != null) t.upgrade();
-            else break;
+            if (t.type.nextLevel() != null) t.upgrade(); else break;
         }
         towers.add(t);
 
         if (rect != null) {
-            // Đánh dấu spot tương ứng đã dùng
-            TowerSpot spot = findSpotByRectApprox(rect, 0.5f);
+            TowerSpot spot = findSpotByRectApprox(rect);
             if (spot != null) spot.used = true;
         }
-        return t;
     }
 
-    private TowerSpot findSpotByRectApprox(Rectangle r, float eps) {
+    private TowerSpot findSpotByRectApprox(Rectangle r) {
         for (TowerSpot s : towerSpots) {
-            if (approxEq(s.rect.x, r.x, eps)
-                && approxEq(s.rect.y, r.y, eps)
-                && approxEq(s.rect.width, r.width, eps)
-                && approxEq(s.rect.height, r.height, eps)) {
+            if (approxEq(s.rect.x, r.x)
+                && approxEq(s.rect.y, r.y)
+                && approxEq(s.rect.width, r.width)
+                && approxEq(s.rect.height, r.height)) {
                 return s;
             }
         }
         return null;
     }
 
-    private boolean approxEq(float a, float b, float eps) {
-        return Math.abs(a - b) <= eps;
-    }
+    private boolean approxEq(float a, float b) { return Math.abs(a - b) <= (float) 0.5; }
+
+    // Victory accessors
+    public boolean isVictory() { return victory; }
+    public void clearVictory() { victory = false; }
 }

@@ -16,6 +16,10 @@ import com.mygdx.td.Constants;
  * Bổ sung:
  *  - dir (hướng di chuyển) để renderer chọn animation/hướng mặt.
  *  - deathTimer: thời gian còn lại trước khi cho phép remove enemy khi đã chết.
+ *  - goldReward: vàng rơi theo từng enemy (để WaveManager gán theo loại).
+ *  - damageTakenMultiplier: hệ số sát thương nhận (boss có thể giảm).
+ *  - shield pulse (mid-boss): định kỳ giảm sát thương trong shieldDuration.
+ *  - enrage (final boss): khi HP <= threshold, tăng speed.
  */
 public class Enemy {
 
@@ -39,6 +43,25 @@ public class Enemy {
 
     private static final float WAYPOINT_EPSILON = 2f;
 
+    // Thưởng vàng khi hạ gục
+    public int goldReward = 5;
+
+    // Hệ số sát thương nhận (1f = bình thường, 0.9f = nhận 90% dmg)
+    public float damageTakenMultiplier = 1f;
+
+    // Shield pulse cho mid-boss
+    public boolean shieldPulsing = false;
+    public float shieldPeriod = 6f;        // mỗi 6s
+    public float shieldDuration = 2f;      // bật khiên 2s
+    public float shieldDmgMultiplier = 0.5f; // nhận 50% dmg khi có khiên
+    private float shieldPhase = 0f;        // timer chu kỳ
+
+    // Enrage cho final boss
+    public boolean enrageEnabled = false;
+    public float enrageThreshold = 0.5f; // 50% HP
+    public float enrageSpeedMultiplier = 1.2f;
+    private boolean enraged = false;
+
     public Enemy(Path path) {
         this.waypoints = path.getWaypoints();
         if (waypoints.size == 0) throw new IllegalStateException("Path has no waypoints");
@@ -57,6 +80,19 @@ public class Enemy {
         if (dead) {
             if (deathTimer > 0f) deathTimer -= dt;
             return;
+        }
+
+        // Shield pulse (mid-boss)
+        if (shieldPulsing) {
+            float cycle = shieldPeriod + shieldDuration;
+            shieldPhase += dt;
+            while (shieldPhase >= cycle) shieldPhase -= cycle;
+        }
+
+        // Enrage (final boss)
+        if (enrageEnabled && !enraged && hp <= maxHp * enrageThreshold) {
+            setBaseSpeed(baseSpeed * enrageSpeedMultiplier);
+            enraged = true;
         }
 
         // Cập nhật slow (nếu có)
@@ -100,7 +136,16 @@ public class Enemy {
 
     public void damage(float dmg) {
         if (dead || reachedEnd) return;
-        hp -= dmg;
+
+        float mult = damageTakenMultiplier;
+        if (shieldPulsing) {
+            // Trong khoảng shieldDuration ở đầu chu kỳ -> bật khiên
+            if (shieldPhase >= 0f && shieldPhase <= shieldDuration) {
+                mult *= shieldDmgMultiplier;
+            }
+        }
+
+        hp -= (dmg * mult);
         if (hp <= 0f) {
             hp = 0f;
             dead = true;
@@ -133,4 +178,6 @@ public class Enemy {
     public Vector2 getDir() { return dir; }
     public boolean isDead() { return dead; }
     public boolean hasReachedEnd() { return reachedEnd; }
+
+    public int getGoldReward() { return goldReward; }
 }

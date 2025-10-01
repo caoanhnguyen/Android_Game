@@ -20,6 +20,7 @@ import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
 import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
+import com.badlogic.gdx.scenes.scene2d.Touchable;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.Scaling;
 import com.badlogic.gdx.utils.viewport.FitViewport;
@@ -41,7 +42,7 @@ public class UIHud {
 
     // Assets
     private Texture iconCashTex, iconHeartTex;
-    private BitmapFont font, waveTitleFont;
+    private BitmapFont font, waveTitleFont; // dùng chung font_title.fnt
     private NinePatch bannerPatch;
     private Skin iconSkin;
     private TextureAtlas towerIconAtlas;
@@ -49,15 +50,20 @@ public class UIHud {
     // UI nodes
     private Label goldLabel, heartLabel, waveLabel;
 
+    // Nút play/pause và icon
+    private ImageButton playPauseBtn;
+    private Drawable pauseUp, pauseOver, pauseDown;
+    private Drawable playUp, playOver, playDown;
+
     // State
     private boolean paused = true; // mặc định Paused để hiện icon Play
     public Runnable onPauseToggle;
     public Runnable onStartWave;
     public Runnable onOpenSettings;
-    public Runnable onExitRequested; // MỚI: callback cho nút X
+    public Runnable onExitRequested; // callback cho nút X
 
     // Kích thước
-    private static final float INFO_W = 360f;
+    private static final float INFO_W = 430f;
     private static final float INFO_H = 56f;
     private static final float ICON_SIZE = 24f;
     private static final float TOP_PAD = 6f;
@@ -71,6 +77,10 @@ public class UIHud {
     private Table towerPopupHUD;
     private Table towerUpgradeHUD;
 
+    // Scrims (lớp bắt click nền để đóng popup khi click ra ngoài)
+    private Image towerPopupScrim;
+    private Image upgradePopupScrim;
+
     public void setTowerTypes(TowerType[] types) { this.towerTypes = types; }
     public void setTowerSelectListener(TowerSelectListener listener) { this.towerSelectListener = listener; }
 
@@ -83,11 +93,18 @@ public class UIHud {
     }
 
     private void loadAssets() {
-        font = game.assets.fontMedium != null ? game.assets.fontMedium : new BitmapFont();
         try {
             waveTitleFont = new BitmapFont(Gdx.files.internal("font/font_title.fnt"));
             waveTitleFont.setUseIntegerPositions(false);
-        } catch (Throwable t) { waveTitleFont = font; }
+            font = new BitmapFont(Gdx.files.internal("font/font_middle.fnt"));
+            font.setUseIntegerPositions(false);
+        } catch (Throwable t) {
+            waveTitleFont = new BitmapFont();
+            waveTitleFont.setUseIntegerPositions(false);
+            font = new BitmapFont();
+            font.setUseIntegerPositions(false);
+            Gdx.app.error("UIHud", "Không load được font trong assets/font/: " + t.getMessage());
+        }
 
         try {
             Texture bannerTex = new Texture(Gdx.files.internal("ui/banner_11.9.png"));
@@ -138,7 +155,7 @@ public class UIHud {
 
         Table infoTable = new Table();
         infoTable.defaults().center();
-        infoTable.padLeft(36f).padRight(12f);
+        infoTable.padLeft(12f).padRight(12f);
 
         if (iconHeartTex != null) {
             Image heartIcon = new Image(iconHeartTex);
@@ -147,7 +164,7 @@ public class UIHud {
         }
         heartLabel = new Label("0", new Label.LabelStyle(font, Color.WHITE));
         heartLabel.setAlignment(Align.left);
-        heartLabel.setFontScale(1.0f);
+        heartLabel.setFontScale(0.65f);
         infoTable.add(heartLabel).minWidth(40).left().padRight(10f);
 
         if (iconCashTex != null) {
@@ -157,17 +174,17 @@ public class UIHud {
         }
         goldLabel = new Label("0", new Label.LabelStyle(font, Color.valueOf("ffe96b")));
         goldLabel.setAlignment(Align.left);
-        goldLabel.setFontScale(1.0f);
+        goldLabel.setFontScale(0.65f);
         infoTable.add(goldLabel).minWidth(60).left().padRight(10f);
 
         Label waveTitle = new Label("WAVE", new Label.LabelStyle(waveTitleFont, new Color(1f, 0.90f, 0.10f, 1f)));
         waveTitle.setAlignment(Align.center);
-        waveTitle.setFontScale(0.65f); // nhỏ để không tràn khung
+        waveTitle.setFontScale(0.65f);
         infoTable.add(waveTitle).minWidth(66).padRight(24f);
 
         waveLabel = new Label("0", new Label.LabelStyle(font, Color.WHITE));
         waveLabel.setAlignment(Align.left);
-        waveLabel.setFontScale(1.0f);
+        waveLabel.setFontScale(0.65f);
         infoTable.add(waveLabel).minWidth(54).left();
 
         infoStack.add(infoTable);
@@ -176,12 +193,10 @@ public class UIHud {
         Table controls = new Table();
         controls.right().top();
 
-        ImageButton playPauseBtn = createPausePlayButton();   // sẽ toggle giữa Play/Pause
+        playPauseBtn = createPausePlayButton();
         ImageButton settingsBtn = createSettingsButton();
-        ImageButton closeBtn    = createCloseButton();        // MỚI
+        ImageButton closeBtn    = createCloseButton();
 
-        // Thứ tự thêm X -> Setting -> Play để khi canh phải, Play nằm ngoài cùng bên phải,
-        // kế đó Setting, kế nữa là X (đúng yêu cầu "từ ngoài vào: Play, Setting, X")
         controls.add(playPauseBtn).size(RIGHT_BTN_SIZE, RIGHT_BTN_SIZE).padLeft(6f);
         controls.add(settingsBtn).size(RIGHT_BTN_SIZE, RIGHT_BTN_SIZE).padLeft(6f);
         controls.add(closeBtn).size(RIGHT_BTN_SIZE, RIGHT_BTN_SIZE).padLeft(6f);
@@ -190,36 +205,80 @@ public class UIHud {
         root.add().expandX();
         root.add(controls).right().padRight(4f);
         root.row();
+
+        // Đồng bộ icon ban đầu theo trạng thái wave/paused
+        refreshPlayPauseIcon();
     }
 
     private ImageButton createPausePlayButton() {
         if (iconSkin == null) return new ImageButton(new Image().getDrawable());
-        Drawable pauseDrawable = safeDrawable("row-9-column-5");  // Pause icon
-        Drawable pauseDownDrawable  = safeDrawable("row-9-column-6");
-        Drawable pauseOverDrawable  = safeDrawable("row-9-column-4");
 
-        Drawable playDownDrawable  = safeDrawable("row-4-column-6");
-        Drawable playDrawable  = safeDrawable("row-4-column-5");  // Play icon
-        Drawable playOverDrawable  = safeDrawable("row-4-column-4");
+        // Lưu icon vào field để dùng lại khi refresh
+        pauseUp   = safeDrawable("row-9-column-5");
+        pauseDown = safeDrawable("row-9-column-6");
+        pauseOver = safeDrawable("row-9-column-4");
+
+        playDown  = safeDrawable("row-4-column-6");
+        playUp    = safeDrawable("row-4-column-5");
+        playOver  = safeDrawable("row-4-column-4");
 
         ImageButton.ImageButtonStyle style = new ImageButton.ImageButtonStyle();
-        style.up = paused ? playDrawable : pauseDrawable;
-        style.over = paused ? playOverDrawable : pauseOverDrawable;
-        style.down = paused ? playDownDrawable : pauseDownDrawable;
+        style.up = paused ? playUp : pauseUp;
+        style.over = paused ? (playOver != null ? playOver : playUp) : (pauseOver != null ? pauseOver : pauseUp);
+        style.down = paused ? (playDown != null ? playDown : playUp) : (pauseDown != null ? pauseDown : pauseUp);
+
         final ImageButton btn = new ImageButton(style);
+
         btn.addListener(new ClickListener() {
             @Override public void clicked(InputEvent event, float x, float y) {
                 game.playSound(game.assets.gameClickSound);
-                paused = !paused;
-                style.up = paused ? playDrawable : pauseDrawable;
-                style.over = paused ? playOverDrawable : pauseOverDrawable;
-                style.down = paused ? playDownDrawable : pauseDownDrawable;
-                btn.setStyle(style);
-                if (onPauseToggle != null) onPauseToggle.run();
-                if (!paused && onStartWave != null) onStartWave.run();
+
+                boolean inWave = world != null && world.waveManager.isInWave();
+
+                if (inWave) {
+                    // Đang trong wave: toggle play/pause
+                    paused = !paused;
+                    if (onPauseToggle != null) onPauseToggle.run();
+                } else {
+                    // Đang ở giữa khoảng nghỉ (không có wave nào): 1 click -> start wave ngay
+                    if (paused) {
+                        paused = false; // đảm bảo đang ở trạng thái "playing"
+                        if (onPauseToggle != null) onPauseToggle.run();
+                    }
+                    if (onStartWave != null) onStartWave.run();
+                }
+
+                refreshPlayPauseIcon();
             }
         });
         return btn;
+    }
+
+    // Cập nhật icon hiển thị theo trạng thái thực tế
+    private void refreshPlayPauseIcon() {
+        if (playPauseBtn == null) return;
+        ImageButton.ImageButtonStyle s = playPauseBtn.getStyle();
+        boolean inWave = world != null && world.waveManager.isInWave();
+
+        if (!inWave) {
+            // Không có wave đang chạy -> hiện icon Play (1 lần bấm để bắt đầu wave kế)
+            s.up = playUp;
+            s.over = (playOver != null ? playOver : playUp);
+            s.down = (playDown != null ? playDown : playUp);
+        } else {
+            // Đang trong wave: nếu paused -> hiện Play; nếu đang chạy -> hiện Pause
+            boolean showPlay = paused;
+            if (showPlay) {
+                s.up = playUp;
+                s.over = (playOver != null ? playOver : playUp);
+                s.down = (playDown != null ? playDown : playUp);
+            } else {
+                s.up = pauseUp;
+                s.over = (pauseOver != null ? pauseOver : pauseUp);
+                s.down = (pauseDown != null ? pauseDown : pauseUp);
+            }
+        }
+        playPauseBtn.setStyle(s);
     }
 
     private ImageButton createSettingsButton() {
@@ -245,11 +304,9 @@ public class UIHud {
 
     private ImageButton createCloseButton() {
         if (iconSkin == null) return new ImageButton(new Image().getDrawable());
-        // Đúng icon X theo atlas: row-4-column-7
         Drawable up = safeDrawable("row-4-column-8");
         Drawable over = safeDrawable("row-4-column-7");
         Drawable down = safeDrawable("row-4-column-9");
-        // Dùng luôn up cho over/down để thống nhất phong cách (atlas icon thường chỉ có 1 trạng thái)
         ImageButton.ImageButtonStyle style = new ImageButton.ImageButtonStyle();
         style.up = up;
         style.over = over;
@@ -317,25 +374,23 @@ public class UIHud {
                 priceTable.add(cashIcon).size(22, 22).padRight(2);
             }
             Label priceLabel = new Label("" + type.cost, new Label.LabelStyle(font, Color.valueOf("ffe96b")));
-            priceLabel.setFontScale(1.1f);
+            priceLabel.setFontScale(0.65f);
             priceTable.add(priceLabel);
 
+
+            // Tên trụ
             Label nameLabel = new Label(type.name, new Label.LabelStyle(font, Color.WHITE));
-            nameLabel.setFontScale(1.1f);
+            nameLabel.setFontScale(0.65f);
 
             Table cell = new Table();
             cell.add(btn).size(80, 80).padTop(10).row();
             cell.add(nameLabel).padTop(5f).row();
-            cell.add(priceTable).padTop(8).padBottom(20);
 
             btn.addListener(new ClickListener() {
                 @Override
                 public void clicked(InputEvent event, float x, float y) {
                     game.playSound(game.assets.gameClickSound);
-                    towerPopupHUD.addAction(Actions.sequence(
-                        Actions.fadeOut(0.16f),
-                        Actions.run(() -> towerPopupHUD.setVisible(false))
-                    ));
+                    hideTowerPopupHUD();
                     if (towerSelectListener != null) towerSelectListener.onTowerSelected(type);
                 }
             });
@@ -344,26 +399,52 @@ public class UIHud {
         }
 
         towerPopupHUD.add(row).padTop(10).padBottom(16);
-        towerPopupHUD.setVisible(false);
-        stage.addActor(towerPopupHUD);
     }
 
     public void showTowerPopupHUD() {
+        // Không cho 2 popup chồng nhau
+        hideUpgradePopupHUD();
+
         buildTowerPopupHUD();
-        if (towerPopupHUD != null) {
-            towerPopupHUD.setVisible(true);
-            towerPopupHUD.setColor(1,1,1,0);
-            towerPopupHUD.addAction(Actions.fadeIn(0.2f));
-        }
+        if (towerPopupHUD == null) return;
+
+        // Tạo scrim bắt click nền và đóng popup
+        if (towerPopupScrim != null) towerPopupScrim.remove();
+        towerPopupScrim = new Image(game.assets.whitePixel);
+        towerPopupScrim.setColor(0, 0, 0, 0.001f); // gần như trong suốt, chỉ để bắt input
+        towerPopupScrim.setFillParent(true);
+        towerPopupScrim.setTouchable(Touchable.enabled);
+        towerPopupScrim.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) { hideTowerPopupHUD(); }
+        });
+
+        towerPopupHUD.setVisible(false); // để áp dụng fadeIn
+        stage.addActor(towerPopupScrim);
+        stage.addActor(towerPopupHUD);
+
+        towerPopupHUD.setVisible(true);
+        towerPopupHUD.setColor(1,1,1,0f);
+        towerPopupHUD.addAction(Actions.fadeIn(0.2f));
     }
 
     public void hideTowerPopupHUD() {
-        if (towerPopupHUD != null) towerPopupHUD.setVisible(false);
+        if (towerPopupHUD != null) {
+            towerPopupHUD.clearActions();
+            towerPopupHUD.setVisible(false);
+            towerPopupHUD.remove();
+            towerPopupHUD = null;
+        }
+        if (towerPopupScrim != null) {
+            towerPopupScrim.remove();
+            towerPopupScrim = null;
+        }
     }
 
     // ===================== Tower upgrade popup =====================
 
     public void showUpgradePopupHUD(Tower tower, Runnable onUpgrade) {
+        hideTowerPopupHUD(); // không chồng 2 popup
+
         if (towerUpgradeHUD != null) towerUpgradeHUD.remove();
 
         TowerType nextType = tower.type.nextLevel();
@@ -383,59 +464,68 @@ public class UIHud {
         content.defaults().center();
 
         Label levelLabel = new Label("LEVEL: " + (tower.getUpgradeLevel() + 1), new Label.LabelStyle(font, Color.valueOf("ffe96b")));
-        levelLabel.setFontScale(1.05f);
+        levelLabel.setFontScale(0.65f);
         levelLabel.setAlignment(Align.center);
         content.add(levelLabel).width(popupW - 16).padTop(14).center().row();
 
         if (nextType != null) {
             Label nextLabel = new Label("NEXT: " + nextType.name + " (+" + nextType.damage + " DMG)", new Label.LabelStyle(font, Color.valueOf("36e7e2")));
-            nextLabel.setFontScale(1f);
+            nextLabel.setFontScale(0.65f);
             nextLabel.setAlignment(Align.center);
             nextLabel.setWrap(true);
             content.add(nextLabel).width(popupW - 16).padTop(8).center().row();
 
-            Table priceAndBtnTable = new Table();
-            priceAndBtnTable.defaults().center();
-            if (iconCashTex != null) {
-                Image cashIcon = new Image(iconCashTex);
-                cashIcon.setScaling(Scaling.fit);
-                priceAndBtnTable.add(cashIcon).size(22, 22).padRight(3).center();
-            }
-            Label priceLabel = new Label("" + nextType.cost, new Label.LabelStyle(font, Color.valueOf("ffe96b")));
-            priceLabel.setFontScale(1.05f);
-            priceLabel.setAlignment(Align.center);
-            priceAndBtnTable.add(priceLabel).padRight(14);
-
             Label lblUp = new Label("UPGRADE", new Label.LabelStyle(font, Color.WHITE));
-            lblUp.setFontScale(1.05f);
+            lblUp.setFontScale(0.65f);
             lblUp.setAlignment(Align.center);
             lblUp.addListener(new ClickListener() {
                 @Override
                 public void clicked(InputEvent event, float x, float y) {
-                    towerUpgradeHUD.setVisible(false);
+                    hideUpgradePopupHUD();
                     if (onUpgrade != null) onUpgrade.run();
                 }
             });
-            priceAndBtnTable.add(lblUp).padLeft(10);
 
-            content.add(priceAndBtnTable).width(popupW - 16).padTop(12).center().row();
+            content.add(lblUp).width(popupW - 16).padTop(12).center().row();
         } else {
             Label maxLabel = new Label("MAX LEVEL", new Label.LabelStyle(font, Color.valueOf("ff5959")));
-            maxLabel.setFontScale(1.08f);
+            maxLabel.setFontScale(0.65f);
             maxLabel.setAlignment(Align.center);
             content.add(maxLabel).width(popupW - 16).padTop(12).center().row();
         }
 
         towerUpgradeHUD.add(content).expand().center();
+
+        // Scrim cho popup nâng cấp
+        if (upgradePopupScrim != null) upgradePopupScrim.remove();
+        upgradePopupScrim = new Image(game.assets.whitePixel);
+        upgradePopupScrim.setColor(0, 0, 0, 0.001f);
+        upgradePopupScrim.setFillParent(true);
+        upgradePopupScrim.setTouchable(Touchable.enabled);
+        upgradePopupScrim.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) { hideUpgradePopupHUD(); }
+        });
+
         towerUpgradeHUD.setVisible(false);
+        stage.addActor(upgradePopupScrim);
         stage.addActor(towerUpgradeHUD);
+
         towerUpgradeHUD.setVisible(true);
         towerUpgradeHUD.setColor(1, 1, 1, 0);
         towerUpgradeHUD.addAction(Actions.fadeIn(0.19f));
     }
 
     public void hideUpgradePopupHUD() {
-        if (towerUpgradeHUD != null) towerUpgradeHUD.setVisible(false);
+        if (towerUpgradeHUD != null) {
+            towerUpgradeHUD.clearActions();
+            towerUpgradeHUD.setVisible(false);
+            towerUpgradeHUD.remove();
+            towerUpgradeHUD = null;
+        }
+        if (upgradePopupScrim != null) {
+            upgradePopupScrim.remove();
+            upgradePopupScrim = null;
+        }
     }
 
     // ===================== HUD update / state =====================
@@ -445,12 +535,16 @@ public class UIHud {
         if (heartLabel != null) heartLabel.setText(String.valueOf(world.lives));
         if (waveLabel != null) {
             int cur = world.waveManager.getCurrentWave();
-            waveLabel.setText(String.valueOf(cur));
+            int total = world.waveManager.getTotalWaves();
+            if (total > 0) waveLabel.setText(cur + "/" + total);
+            else waveLabel.setText(String.valueOf(cur));
         }
+        // Cập nhật icon theo trạng thái mới nhất (khi kết thúc wave hoặc bắt đầu wave)
+        refreshPlayPauseIcon();
     }
 
     public boolean isPaused() { return paused; }
-    public Stage stage() { return stage; } // optional helper
+    public Stage stage() { return stage; }
 
     public void dispose() {
         stage.dispose();
