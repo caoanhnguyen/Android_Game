@@ -7,7 +7,7 @@ import com.mygdx.td.world.World;
 
 /**
  * Quản lý wave: 20 wave hữu hạn, có boss ở 5/10/15/20.
- * Dùng cùng sprite, chỉ thay đổi chỉ số.
+ * Mỗi loại enemy spawn đúng asset (qua trường type).
  */
 public class WaveManager {
 
@@ -20,7 +20,7 @@ public class WaveManager {
     private static class WaveEntry {
         EnemyType type;
         int count;
-        float interval; // giây giữa lần spawn cùng entry
+        float interval;
         WaveEntry(EnemyType type, int count, float interval) {
             this.type = type; this.count = count; this.interval = interval;
         }
@@ -40,20 +40,16 @@ public class WaveManager {
 
     private final World world;
 
-    private int currentWave = 0; // 0 = chưa bắt đầu, 1..totalWaves = đang/đã chơi
+    private int currentWave = 0;
     private boolean inWave = false;
 
     private final int totalWaves = 20;
-
-    // Nội dung wave
     private final Array<WaveDef> waves = new Array<>();
 
-    // Con trỏ spawn cho wave hiện tại (spawn tuần tự các entry)
     private int entryIndex = 0;
     private int remainInEntry = 0;
     private float entryTimer = 0f;
 
-    // Trạng thái completion
     private boolean allWavesCompleted = false;
 
     public WaveManager(World world) {
@@ -70,7 +66,6 @@ public class WaveManager {
         }
 
         WaveDef def = waves.get(currentWave - 1);
-        // Nếu hết entry -> kết thúc wave (chờ enemies dọn hết để World xác nhận)
         if (entryIndex >= def.entries.size) {
             inWave = false;
             if (currentWave >= totalWaves) allWavesCompleted = true;
@@ -78,10 +73,9 @@ public class WaveManager {
         }
 
         if (remainInEntry <= 0) {
-            // chuẩn bị entry tiếp theo
             WaveEntry e = def.entries.get(entryIndex);
             remainInEntry = e.count;
-            entryTimer = 0f; // spawn ngay 1 con đầu
+            entryTimer = 0f;
         }
 
         entryTimer -= dt;
@@ -91,7 +85,6 @@ public class WaveManager {
             remainInEntry--;
             entryTimer = e.interval;
             if (remainInEntry <= 0) {
-                // chuyển sang entry tiếp theo
                 entryIndex++;
             }
         }
@@ -100,7 +93,6 @@ public class WaveManager {
     public void startNextWave() {
         if (inWave) return;
         if (currentWave >= totalWaves) {
-            // đã xong tất cả, không start thêm
             return;
         }
         currentWave++;
@@ -131,7 +123,6 @@ public class WaveManager {
         allWavesCompleted = false;
     }
 
-    // Resume: đặt trạng thái "đang chờ bắt đầu nextWave"
     public void resumeAtWave(int nextWave) {
         if (nextWave < 1) nextWave = 1;
         if (nextWave > totalWaves) nextWave = totalWaves;
@@ -147,7 +138,6 @@ public class WaveManager {
 
     private void buildDefaultWaves() {
         waves.clear();
-        // Wave 1–4: Grunt tăng dần
         for (int w = 1; w <= 4; w++) {
             WaveDef d = new WaveDef();
             int count = 8 + (w - 1) * 2;
@@ -155,50 +145,44 @@ public class WaveManager {
             d.add(EnemyType.GRUNT, count, iv);
             waves.add(d);
         }
-        // Wave 5: Mini-boss 1
         {
             WaveDef d = new WaveDef();
             d.add(EnemyType.MINI_BOSS, 1, 1.6f);
             waves.add(d);
         }
-        // Wave 6–9: xen kẽ Runner/Tank + Grunt
         for (int w = 6; w <= 9; w++) {
             WaveDef d = new WaveDef();
             boolean runnerPhase = (w % 2 == 0);
-            int gruntCount = 10 + (w - 6) * 2; // 10..16
-            int otherCount = 8 + (w - 6) * 2;  // 8..14
+            int gruntCount = 10 + (w - 6) * 2;
+            int otherCount = 8 + (w - 6) * 2;
             float ivGrunt = Math.max(0.6f, 1.0f - (w - 6) * 0.05f);
             float ivOther = Math.max(0.6f, 1.1f - (w - 6) * 0.05f);
             d.add(EnemyType.GRUNT, gruntCount, ivGrunt);
             d.add(runnerPhase ? EnemyType.RUNNER : EnemyType.TANK, otherCount, ivOther);
             waves.add(d);
         }
-        // Wave 10: Mid-boss
         {
             WaveDef d = new WaveDef();
             d.add(EnemyType.MID_BOSS, 1, 1.7f);
             waves.add(d);
         }
-        // Wave 11–14: phối hợp 3 archetype
         for (int w = 11; w <= 14; w++) {
             WaveDef d = new WaveDef();
-            int each = 8 + (w - 11) * 2; // 8..14 mỗi loại
+            int each = 8 + (w - 11) * 2;
             float iv = Math.max(0.55f, 0.9f - (w - 11) * 0.05f);
             d.add(EnemyType.GRUNT, each, iv);
             d.add(EnemyType.RUNNER, each, iv);
-            d.add(EnemyType.TANK, each - 2, iv + 0.05f); // tank ít hơn chút
+            d.add(EnemyType.TANK, each - 2, iv + 0.05f);
             waves.add(d);
         }
-        // Wave 15: Mini-boss 2 (x2)
         {
             WaveDef d = new WaveDef();
             d.add(EnemyType.MINI_BOSS_2, 2, 1.8f);
             waves.add(d);
         }
-        // Wave 16–19: Elite biến thể
         for (int w = 16; w <= 19; w++) {
             WaveDef d = new WaveDef();
-            int g = 10 + (w - 16) * 2; // 10..16
+            int g = 10 + (w - 16) * 2;
             int r = 8 + (w - 16) * 2;
             int t = 8 + (w - 16) * 2;
             float iv = Math.max(0.5f, 0.85f - (w - 16) * 0.05f);
@@ -212,13 +196,11 @@ public class WaveManager {
             }
             waves.add(d);
         }
-        // Wave 20: Final boss
         {
             WaveDef d = new WaveDef();
             d.add(EnemyType.FINAL_BOSS, 1, 1.8f);
             waves.add(d);
         }
-        // Safety
         while (waves.size < totalWaves) {
             WaveDef d = new WaveDef();
             d.add(EnemyType.GRUNT, 12, 0.9f);
@@ -226,10 +208,10 @@ public class WaveManager {
         }
     }
 
+    // CHỈNH: truyền đúng type khi tạo Enemy
     private void spawnEnemyOfType(EnemyType type, int wave) {
-        Enemy e = new Enemy(world.path);
+        Enemy e = new Enemy(world.path, type);
 
-        // HP baseline multiplier theo wave (không vô hạn)
         float H = Constants.ENEMY_HP;
         float hpMult = hpMultForWave(wave);
 
@@ -238,7 +220,6 @@ public class WaveManager {
 
         switch (type) {
             case GRUNT:
-                // hpMult giữ nguyên, speed 1.0, reward 5
                 reward = 5;
                 break;
             case RUNNER:
@@ -267,9 +248,9 @@ public class WaveManager {
                 reward = Math.round(7 * 1.2f);
                 break;
             case MINI_BOSS:
-                hpMult = 18f; // 18 * H
+                hpMult = 18f;
                 speedMul = 0.90f;
-                e.damageTakenMultiplier = 0.9f; // nhận 90% dmg
+                e.damageTakenMultiplier = 0.9f;
                 reward = 30;
                 break;
             case MID_BOSS:
@@ -297,7 +278,6 @@ public class WaveManager {
                 break;
         }
 
-        // Áp stats
         float hp = H * hpMult;
         e.maxHp = e.hp = hp;
         e.setBaseSpeed(Constants.ENEMY_BASE_SPEED * speedMul);
@@ -307,11 +287,10 @@ public class WaveManager {
     }
 
     private float hpMultForWave(int w) {
-        // Mềm mại theo bậc, không vô hạn
-        if (w <= 5) return 1.0f + 0.08f * (w - 1);                        // 1.00 .. 1.32
-        if (w <= 10) return 1.32f + 0.10f * (w - 6);                       // 1.32 .. 1.72
-        if (w <= 15) return 1.82f + 0.12f * (w - 11);                      // 1.82 .. 2.30
-        if (w <= 19) return 2.42f + 0.14f * (w - 16);                      // 2.42 .. 2.84
-        return 3.00f; // wave 20: boss có hệ số riêng, nhưng để fallback
+        if (w <= 5) return 1.0f + 0.08f * (w - 1);
+        if (w <= 10) return 1.32f + 0.10f * (w - 6);
+        if (w <= 15) return 1.82f + 0.12f * (w - 11);
+        if (w <= 19) return 2.42f + 0.14f * (w - 16);
+        return 3.00f;
     }
 }

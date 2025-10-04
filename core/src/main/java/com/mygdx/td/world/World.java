@@ -1,6 +1,7 @@
 package com.mygdx.td.world;
 
 import com.badlogic.gdx.utils.Array;
+import com.mygdx.td.ally.AllyUnit;
 import com.mygdx.td.entities.Tower;
 import com.mygdx.td.entities.TowerType;
 import com.mygdx.td.entities.Enemy;
@@ -16,6 +17,7 @@ public class World {
     public final Array<Tower> towers = new Array<>();
     public final Array<Enemy> enemies = new Array<>();
     public final Array<Bullet> bullets = new Array<>();
+    public final Array<AllyUnit> allies = new Array<>(); // <--- THÊM MẢNG LÍNH
 
     public final Path path = new Path();
     public final WaveManager waveManager = new WaveManager(this);
@@ -51,6 +53,7 @@ public class World {
 
         waveManager.update(dt);
 
+        // ========== ENEMIES ==========
         for (int i = enemies.size - 1; i >= 0; i--) {
             Enemy e = enemies.get(i);
             e.update(dt);
@@ -65,6 +68,16 @@ public class World {
             }
         }
 
+        // ========== ALLIES ==========
+        for (int i = allies.size - 1; i >= 0; i--) {
+            AllyUnit a = allies.get(i);
+            updateAllyUnit(a, dt);
+            if (a.isDead()) {
+                allies.removeIndex(i);
+            }
+        }
+
+        // ========== TOWERS & ATTACK ==========
         for (Tower t : towers) {
             t.update(dt);
             Enemy target = findTarget(t.pos.x, t.pos.y, t.getRange());
@@ -91,6 +104,7 @@ public class World {
             }
         }
 
+        // ========== BULLETS ==========
         for (int i = bullets.size - 1; i >= 0; i--) {
             Bullet b = bullets.get(i);
             b.update(dt);
@@ -122,9 +136,18 @@ public class World {
             }
         }
 
-        // Kiểm tra Victory: đã hoàn tất tất cả wave, không còn enemy alive
+        // ========== VICTORY ==========
         if (!victory && waveManager.isAllWavesCompleted() && !waveManager.isInWave() && enemies.size == 0) {
             victory = true;
+        }
+    }
+
+    private void updateAllyUnit(AllyUnit ally, float dt) {
+        // Simple idle anim (bạn bổ sung hành vi attack, di chuyển nếu muốn)
+        ally.stateTime += dt;
+        // Gợi ý: set hướng mặt SIDE/UP/DOWN dựa trên enemy gần nhất hoặc random nếu đứng yên
+        if (ally.state != AllyUnit.State.DEAD) {
+            if (ally.facing == null) ally.facing = AllyUnit.Facing.SIDE;
         }
     }
 
@@ -213,6 +236,7 @@ public class World {
         towers.clear();
         enemies.clear();
         bullets.clear();
+        allies.clear();
         pendingShots.clear();
         waveManager.reset();
         gold = 150;

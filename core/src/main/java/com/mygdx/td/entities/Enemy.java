@@ -4,6 +4,7 @@ import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
 import com.mygdx.td.world.Path;
 import com.mygdx.td.Constants;
+import com.mygdx.td.managers.WaveManager.EnemyType; // THÊM - để enemy biết loại
 
 /**
  * Enemy di chuyển dọc theo các waypoint trong Path.
@@ -20,6 +21,7 @@ import com.mygdx.td.Constants;
  *  - damageTakenMultiplier: hệ số sát thương nhận (boss có thể giảm).
  *  - shield pulse (mid-boss): định kỳ giảm sát thương trong shieldDuration.
  *  - enrage (final boss): khi HP <= threshold, tăng speed.
+ *  - type: loại enemy (GRUNT, RUNNER, ...)
  */
 public class Enemy {
 
@@ -62,7 +64,12 @@ public class Enemy {
     public float enrageSpeedMultiplier = 1.2f;
     private boolean enraged = false;
 
-    public Enemy(Path path) {
+    // Loại enemy để chọn asset đúng
+    public EnemyType type;
+
+    // Constructor mới: truyền thêm EnemyType
+    public Enemy(Path path, EnemyType type) {
+        this.type = type;
         this.waypoints = path.getWaypoints();
         if (waypoints.size == 0) throw new IllegalStateException("Path has no waypoints");
 
@@ -71,6 +78,12 @@ public class Enemy {
 
         baseSpeed = Constants.ENEMY_BASE_SPEED;
         maxHp = hp = Constants.ENEMY_HP;
+    }
+
+    // Để giữ tương thích (nếu code cũ còn dùng)
+    @Deprecated
+    public Enemy(Path path) {
+        this(path, EnemyType.GRUNT);
     }
 
     public void update(float dt) {

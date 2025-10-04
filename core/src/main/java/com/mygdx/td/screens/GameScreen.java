@@ -45,17 +45,19 @@ import com.badlogic.gdx.utils.viewport.Viewport;
 import com.mygdx.td.TDGame;
 import com.mygdx.td.animations.EnemyVisual;
 import com.mygdx.td.animations.TowerVisual;
+import com.mygdx.td.ally.AllyUnit;
+import com.mygdx.td.ally.AllyUnitVisual;
 import com.mygdx.td.entities.Bullet;
 import com.mygdx.td.entities.Enemy;
 import com.mygdx.td.entities.Tower;
 import com.mygdx.td.entities.TowerType;
+import com.mygdx.td.managers.WaveManager.EnemyType;
 import com.mygdx.td.render.OrderedOrthogonalTiledMapRenderer;
 import com.mygdx.td.save.GameState;
 import com.mygdx.td.save.SaveManager;
 import com.mygdx.td.ui.UIHud;
 import com.mygdx.td.world.TowerSpot;
 import com.mygdx.td.world.World;
-import com.mygdx.td.screens.SelectLevelScreen;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -70,77 +72,73 @@ public class GameScreen extends InputAdapter implements Screen {
     private TiledMap tiledMap;
     private OrderedOrthogonalTiledMapRenderer mapRenderer;
     private final Array<MapLayer> flatLayers = new Array<>();
-
     private final Array<Vector2> loadedWaypoints = new Array<>();
     private String mapPath = "maps/level1.tmx";
 
     private final ObjectMap<Tower, TowerVisual> towerVisuals = new ObjectMap<>();
-    private TowerSpot selectedSpot;
-    private final UIHud hud;
-    private boolean gamePaused = false;
-    private Tower selectedTower = null;
-
     private final ObjectMap<Enemy, EnemyVisual> enemyVisuals = new ObjectMap<>();
     private final ObjectMap<Enemy, EnemyVisual> dyingEnemyVisuals = new ObjectMap<>();
-    private final Set<Enemy> rewardedEnemies = new HashSet<>();
+    private final ObjectMap<AllyUnit, AllyUnitVisual> allyVisuals = new ObjectMap<>();
 
-    private static final String ENEMY_BASE_FOLDER = "enemies/wizard";
-    private static final String E_WALK_SIDE = "S_Run.png";
-    private static final String E_WALK_DOWN = "D_Run.png";
-    private static final String E_WALK_UP   = "U_Run.png";
-    private static final String E_DEATH_SIDE    = "S_Death.png";
-    private static final String E_DEATH_DOWN    = "D_Death.png";
-    private static final String E_DEATH_UP      = "U_Death.png";
-    private static final String E_DEATH_GENERIC = null;
-    private static final int    E_FRAME_W = 96;
-    private static final int    E_FRAME_H = 96;
-    private static final int    E_SPACING_X = 0, E_MARGIN_X = 0, E_MARGIN_Y = 0;
-    private static final int    E_FRAMES_WALK  = -1;
-    private static final float  E_WALK_FRAME_SEC = 0.12f;
-    private static final int    E_FRAMES_DEATH = -1;
-    private static final float  E_DEATH_FRAME_SEC = 0.10f;
-    private static final float  ENEMY_TILE_SIZE = 64f;
-    private static final boolean ENEMY_STRIP_FACES_RIGHT = false;
+    private TowerSpot selectedSpot;
+    private Tower selectedTower;
+
+    private final UIHud hud;
+    private boolean gamePaused = false;
+    private final int level;
+    private boolean victoryShown = false;
+
+    // FRAME CONFIG
+    private static final int SMALL_FRAME_W = 48;
+    private static final int SMALL_FRAME_H = 48;
+    private static final int SMALL_FRAME_COUNT = 6;
+    private static final float SMALL_TILE_SIZE = 64f;
+
+    private static final int LARGE_FRAME_W = 96;
+    private static final int LARGE_FRAME_H = 96;
+    private static final int LARGE_FRAME_COUNT = 6;
+    private static final float LARGE_TILE_SIZE = 128f;
+
+    private static final float WALK_FRAME_SEC = 0.12f;
+    private static final float DEATH_FRAME_SEC = 0.10f;
+    private static final boolean BASE_FACES_RIGHT = false;
+
+    private static final float ALLY_FRAME_W = 48f;
+    private static final float ALLY_FRAME_H = 48f;
+    private static final float ALLY_TILE_SIZE = 48f;
+    private static final String ALLY_ASSET_FOLDER = "allies/archer"; // Sửa lại nếu bạn dùng tên khác
 
     private static final float HP_BAR_WIDTH = 40f;
     private static final float HP_BAR_HEIGHT = 6f;
     private static final float HP_BAR_Y_OFFSET = 38f;
 
-    // ========= In-Game Settings Overlay =========
     private Stage overlayStage;
     private boolean settingsShown = false;
-
     private Table overlayRoot;
     private Image dimBg;
     private Stack frameStack;
     private Table settingsContent;
     private Slider musicSlider, soundSlider;
     private ImageButton musicBtn, soundBtn;
-
-    private Skin buttonSkin;
+    private Skin buttonSkin, iconSkinActive, iconSkinInactive, sliderSkin;
+    private NinePatchDrawable frameDrawable, sliderBgDrawable;
     private TextButton saveBtn, backBtn;
-
-    private NinePatchDrawable frameDrawable;
-    private NinePatchDrawable sliderBgDrawable;
-    private Skin iconSkinActive, iconSkinInactive, sliderSkin;
-    private BitmapFont titleFont; // font_title.fnt
+    private BitmapFont titleFont;
     private Preferences prefs;
-
     private boolean prevMusicEnabled, prevSoundEnabled;
     private float prevMusicVolume, prevSoundVolume;
 
-    private final int level;
-
-    private boolean victoryShown = false;
-
-    public GameScreen(TDGame game) { this(game, 1); }
+    public GameScreen(TDGame game) {
+        this(game, 1);
+    }
 
     public GameScreen(TDGame game, int level) {
         this.game = game;
         this.level = level;
+
         camera = new OrthographicCamera();
         viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
-        camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0);
+        camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0f);
         camera.update();
 
         mapPath = getMapPathForLevel(level);
@@ -152,50 +150,39 @@ public class GameScreen extends InputAdapter implements Screen {
 
         hud = new UIHud(game, world);
         hud.setTowerTypes(TowerType.ALL);
-        hud.setTowerSelectListener(selectedType -> {
+        hud.setTowerSelectListener(type -> {
             if (selectedSpot != null) {
-                if (world.placeTowerOnSpot(selectedSpot, selectedType)) {
-                    // visual Tower sẽ tạo ở render
-                }
+                world.placeTowerOnSpot(selectedSpot, type);
                 selectedSpot = null;
             }
         });
 
-        // Gắn các callback HUD
         hud.onStartWave = () -> {
-            if (world.waveManager != null && !world.waveManager.isInWave() && !world.gameOver) {
+            if (!world.gameOver && !world.waveManager.isInWave())
                 world.waveManager.startNextWave();
-                Gdx.app.log("GAME", "Start wave " + world.waveManager.getCurrentWave());
-            }
         };
         hud.onPauseToggle = () -> {
             gamePaused = hud.isPaused();
-            if (!gamePaused && world.waveManager != null && !world.waveManager.isInWave() && !world.gameOver) {
+            if (!gamePaused && !world.waveManager.isInWave() && !world.gameOver)
                 world.waveManager.startNextWave();
-            }
         };
         hud.onOpenSettings = this::toggleSettingsOverlay;
-        hud.onExitRequested = this::showExitToSelectConfirm; // bấm X -> confirm
+        hud.onExitRequested = this::showExitToSelectConfirm;
 
         gamePaused = hud.isPaused();
 
         overlayStage = new Stage(new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT), game.batch);
         buildSettingsOverlay();
 
-        // Resume checkpoint nếu có
         attemptResumeFromCheckpoint();
 
-        InputMultiplexer mux = new InputMultiplexer();
-        mux.addProcessor(overlayStage);
-        mux.addProcessor(hud.getStage());
-        mux.addProcessor(this);
+        InputMultiplexer mux = new InputMultiplexer(overlayStage, hud.getStage(), this);
         Gdx.input.setInputProcessor(mux);
     }
 
     private String getMapPathForLevel(int level) {
         String cand = "maps/level" + level + ".tmx";
-        if (Gdx.files.internal(cand).exists()) return cand;
-        return "maps/level1.tmx";
+        return Gdx.files.internal(cand).exists() ? cand : "maps/level1.tmx";
     }
 
     private void loadMap() {
@@ -249,22 +236,18 @@ public class GameScreen extends InputAdapter implements Screen {
 
     private void attemptResumeFromCheckpoint() {
         GameState s = SaveManager.loadCheckpoint();
-        if (s == null) return;
-        if (s.level != this.level) return;
+        if (s == null || s.level != this.level) return;
         applyGameState(s);
     }
 
     private void applyGameState(GameState s) {
         world.reset();
-
         for (GameState.TowerSave ts : s.towers) {
             Rectangle rect = ts.hasRect ? new Rectangle(ts.rx, ts.ry, ts.rw, ts.rh) : null;
             world.addTowerRestored(ts.x, ts.y, rect, ts.typeLevel);
         }
-
         world.gold = s.gold;
         world.lives = s.lives;
-
         world.waveManager.resumeAtWave(s.nextWave);
     }
 
@@ -274,22 +257,59 @@ public class GameScreen extends InputAdapter implements Screen {
         return Math.max(1, cur + (in ? 0 : 1));
     }
 
+    private static boolean isLarge(EnemyType type) {
+        switch (type) {
+            case RUNNER:
+            case MINI_BOSS:
+            case MID_BOSS:
+            case FINAL_BOSS:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static String folderFor(EnemyType type) {
+        switch (type) {
+            case GRUNT:         return "enemies/grunt";
+            case RUNNER:        return "enemies/runner";
+            case TANK:          return "enemies/tank";
+            case ELITE_GRUNT:   return "enemies/elite_grunt";
+            case ELITE_RUNNER:  return "enemies/elite_runner";
+            case ELITE_TANK:    return "enemies/elite_tank";
+            case MINI_BOSS:     return "enemies/mini_boss";
+            case MID_BOSS:      return "enemies/mid_boss";
+            case MINI_BOSS_2:   return "enemies/mini_boss";
+            case FINAL_BOSS:    return "enemies/final_boss";
+            default:            return "enemies/grunt";
+        }
+    }
+
     private void syncEnemyVisuals() {
         for (Enemy e : world.enemies) {
             if (!enemyVisuals.containsKey(e)) {
-                EnemyVisual v = EnemyVisual.fromStripsFixed(
-                    ENEMY_BASE_FOLDER,
-                    E_WALK_SIDE, E_WALK_DOWN, E_WALK_UP,
-                    E_DEATH_SIDE, E_DEATH_DOWN, E_DEATH_UP, E_DEATH_GENERIC,
-                    E_FRAME_W, E_FRAME_H,
-                    E_FRAMES_WALK, E_WALK_FRAME_SEC,
-                    E_FRAMES_DEATH, E_DEATH_FRAME_SEC,
-                    E_SPACING_X, E_MARGIN_X, E_MARGIN_Y,
-                    ENEMY_TILE_SIZE, ENEMY_STRIP_FACES_RIGHT
-                );
-                enemyVisuals.put(e, v);
+                boolean large = isLarge(e.type);
+                int fW = large ? LARGE_FRAME_W : SMALL_FRAME_W;
+                int fH = large ? LARGE_FRAME_H : SMALL_FRAME_H;
+                int fCount = large ? LARGE_FRAME_COUNT : SMALL_FRAME_COUNT;
+                float tSize = large ? LARGE_TILE_SIZE : SMALL_TILE_SIZE;
+
+                EnemyVisual vis;
+                try {
+                    vis = EnemyVisual.create(
+                        folderFor(e.type),
+                        fW, fH, fCount,
+                        WALK_FRAME_SEC, DEATH_FRAME_SEC,
+                        tSize, BASE_FACES_RIGHT
+                    );
+                } catch (Exception ex) {
+                    Gdx.app.error("EnemyVisual", "Load fail type=" + e.type + ": " + ex.getMessage());
+                    continue;
+                }
+                enemyVisuals.put(e, vis);
             }
         }
+
         Set<Enemy> toMove = new HashSet<>();
         for (Enemy e : enemyVisuals.keys()) {
             if (!world.enemies.contains(e, true)) toMove.add(e);
@@ -297,28 +317,42 @@ public class GameScreen extends InputAdapter implements Screen {
         for (Enemy e : toMove) {
             EnemyVisual v = enemyVisuals.remove(e);
             if (v != null) {
-                if (v.isReadyToRemove(e)) {
-                    v.dispose();
-                } else {
-                    dyingEnemyVisuals.put(e, v);
-                }
+                if (v.isReadyToRemove(e)) v.dispose();
+                else dyingEnemyVisuals.put(e, v);
             }
         }
     }
 
     private void updateEnemyVisuals(float dt) {
-        for (ObjectMap.Entry<Enemy, EnemyVisual> entry : enemyVisuals.entries()) {
-            entry.value.update(entry.key, dt);
+        for (ObjectMap.Entry<Enemy, EnemyVisual> en : enemyVisuals.entries()) {
+            en.value.update(en.key, dt);
         }
-        Set<Enemy> toRemove = new HashSet<>();
-        for (ObjectMap.Entry<Enemy, EnemyVisual> entry : dyingEnemyVisuals.entries()) {
-            entry.value.update(entry.key, dt);
-            if (entry.value.isReadyToRemove(entry.key)) {
-                entry.value.dispose();
-                toRemove.add(entry.key);
+        Set<Enemy> remove = new HashSet<>();
+        for (ObjectMap.Entry<Enemy, EnemyVisual> en : dyingEnemyVisuals.entries()) {
+            en.value.update(en.key, dt);
+            if (en.value.isReadyToRemove(en.key)) {
+                en.value.dispose();
+                remove.add(en.key);
             }
         }
-        for (Enemy e : toRemove) dyingEnemyVisuals.remove(e);
+        for (Enemy e : remove) dyingEnemyVisuals.remove(e);
+    }
+
+    private void syncAllyVisuals() {
+        for (AllyUnit ally : world.allies) {
+            if (!allyVisuals.containsKey(ally)) {
+                allyVisuals.put(ally, new AllyUnitVisual(ALLY_ASSET_FOLDER, (int)ALLY_FRAME_W, (int)ALLY_FRAME_H, ALLY_TILE_SIZE));
+            }
+        }
+        Set<AllyUnit> toRemove = new HashSet<>();
+        for (AllyUnit ally : allyVisuals.keys()) {
+            if (!world.allies.contains(ally, true) || ally.isDead()) {
+                AllyUnitVisual v = allyVisuals.remove(ally);
+                if (v != null) v.dispose();
+                toRemove.add(ally);
+            }
+        }
+        for (AllyUnit ally : toRemove) allyVisuals.remove(ally);
     }
 
     @Override
@@ -326,15 +360,15 @@ public class GameScreen extends InputAdapter implements Screen {
         if (!gamePaused) {
             world.update(delta);
 
-            // Victory dialog
             if (world.isVictory() && !victoryShown) {
                 victoryShown = true;
-                SaveManager.clearCheckpoint(); // clear checkpoint khi thắng
+                SaveManager.clearCheckpoint();
                 showVictoryDialog();
             }
 
             syncEnemyVisuals();
             updateEnemyVisuals(delta);
+            syncAllyVisuals();
         }
 
         Gdx.gl.glClearColor(0.05f, 0.05f, 0.08f, 1f);
@@ -342,7 +376,6 @@ public class GameScreen extends InputAdapter implements Screen {
 
         camera.update();
         AnimatedTiledMapTile.updateAnimationBaseTime();
-
         if (mapRenderer != null) {
             mapRenderer.setView(camera);
             mapRenderer.render();
@@ -351,6 +384,13 @@ public class GameScreen extends InputAdapter implements Screen {
         game.batch.setProjectionMatrix(camera.combined);
         game.batch.begin();
 
+        // Allies
+        for (AllyUnit ally : world.allies) {
+            AllyUnitVisual v = allyVisuals.get(ally);
+            if (v != null) v.draw(game.batch, ally, ally.stateTime);
+        }
+
+        // Enemies
         for (Enemy e : world.enemies) {
             EnemyVisual v = enemyVisuals.get(e);
             if (v != null) v.draw(game.batch, e);
@@ -358,13 +398,14 @@ public class GameScreen extends InputAdapter implements Screen {
         for (ObjectMap.Entry<Enemy, EnemyVisual> entry : dyingEnemyVisuals.entries()) {
             entry.value.draw(game.batch, entry.key);
         }
+
+        // HP bars (enemies)
         for (Enemy e : world.enemies) {
             if (e.isDead()) continue;
             float pct = Math.max(0f, Math.min(1f, e.getHpPercent()));
             float bw = HP_BAR_WIDTH, bh = HP_BAR_HEIGHT;
-            float bx = e.pos.x - bw / 2f;
-            float by = e.pos.y + HP_BAR_Y_OFFSET;
-
+            float bx = e.getPos().x - bw / 2f;
+            float by = e.getPos().y + HP_BAR_Y_OFFSET;
             game.batch.setColor(0, 0, 0, 0.6f);
             game.batch.draw(game.assets.whitePixel, bx, by, bw, bh);
             game.batch.setColor(0, 1, 0, 1);
@@ -372,6 +413,7 @@ public class GameScreen extends InputAdapter implements Screen {
             game.batch.setColor(1, 1, 1, 1);
         }
 
+        // Towers
         for (Tower t : world.towers) {
             TowerVisual v = towerVisuals.get(t);
             if (v == null) {
@@ -382,6 +424,8 @@ public class GameScreen extends InputAdapter implements Screen {
             v.update(t, delta);
             v.draw(game.batch, t);
         }
+
+        // Bullets
         for (Bullet b : world.bullets) {
             game.batch.draw(game.assets.bulletTex, b.pos.x - 8, b.pos.y - 8, 16, 16);
         }
@@ -401,20 +445,16 @@ public class GameScreen extends InputAdapter implements Screen {
         camera.update();
         Vector3 touch = new Vector3(screenX, screenY, 0);
         viewport.unproject(touch);
+        float wx = touch.x, wy = touch.y;
 
-        float worldX = touch.x;
-        float worldY = touch.y;
-        if (worldX < 0 || worldX > viewport.getWorldWidth() || worldY < 0 || worldY > viewport.getWorldHeight())
-            return false;
-
+        if (wx < 0 || wx > viewport.getWorldWidth() || wy < 0 || wy > viewport.getWorldHeight()) return false;
         if (settingsShown) return false;
 
-        Tower tower = findTowerAt(worldX, worldY, 40);
+        Tower tower = findTowerAt(wx, wy, 40);
         if (tower != null) {
             selectedTower = tower;
             hud.showUpgradePopupHUD(tower, () -> {
-                boolean ok = world.upgradeTower(tower);
-                if (ok) {
+                if (world.upgradeTower(tower)) {
                     TowerVisual v = towerVisuals.get(tower);
                     if (v != null) v.triggerUpgrade();
                 }
@@ -423,7 +463,7 @@ public class GameScreen extends InputAdapter implements Screen {
             return true;
         }
 
-        TowerSpot spot = findHoverSpot(worldX, worldY);
+        TowerSpot spot = findHoverSpot(wx, wy);
         if (spot != null && !spot.used) {
             selectedSpot = spot;
             hud.showTowerPopupHUD();
@@ -445,12 +485,8 @@ public class GameScreen extends InputAdapter implements Screen {
         return null;
     }
 
-    // ================= In-Game Settings Overlay =================
-
     private void buildSettingsOverlay() {
         prefs = Gdx.app.getPreferences("td_settings");
-
-        // Font chính: font_title.fnt
         try {
             titleFont = new BitmapFont(Gdx.files.internal("font/font_title.fnt"));
             titleFont.setUseIntegerPositions(false);
@@ -461,16 +497,16 @@ public class GameScreen extends InputAdapter implements Screen {
         NinePatch framePatch = new NinePatch(new Texture(Gdx.files.internal("ui/banner_11.9.png")), 16, 16, 16, 16);
         frameDrawable = new NinePatchDrawable(framePatch);
 
-        NinePatch sliderBgPatch = new NinePatch(new Texture(Gdx.files.internal("ui/bg_slider.9.png")), 8, 8, 8, 8);
-        sliderBgDrawable = new NinePatchDrawable(sliderBgPatch);
+        NinePatch sliderPatch = new NinePatch(new Texture(Gdx.files.internal("ui/bg_slider.9.png")), 8, 8, 8, 8);
+        sliderBgDrawable = new NinePatchDrawable(sliderPatch);
 
         TextureAtlas sliderAtlas = new TextureAtlas(Gdx.files.internal("ui/knob.atlas"));
         sliderSkin = new Skin(sliderAtlas);
 
         TextureAtlas activeIconAtlas = new TextureAtlas(Gdx.files.internal("ui/orange_icon_buttons.atlas"));
         TextureAtlas inActiveIconAtlas = new TextureAtlas(Gdx.files.internal("ui/metal_buttons_icon.atlas"));
-        for (Texture tex : activeIconAtlas.getTextures()) tex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
-        for (Texture tex : inActiveIconAtlas.getTextures()) tex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        for (Texture t : activeIconAtlas.getTextures()) t.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        for (Texture t : inActiveIconAtlas.getTextures()) t.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         iconSkinActive = new Skin(activeIconAtlas);
         iconSkinInactive = new Skin(inActiveIconAtlas);
 
@@ -483,24 +519,20 @@ public class GameScreen extends InputAdapter implements Screen {
         overlayStage.addActor(overlayRoot);
 
         dimBg = new Image(game.assets.whitePixel);
-        dimBg.setColor(0, 0, 0, 0.55f);
+        dimBg.setColor(0,0,0,0.55f);
         dimBg.setFillParent(true);
         dimBg.addListener(new ClickListener() {
             @Override public void clicked(InputEvent event, float x, float y) { onBackNotSave(); }
         });
 
         settingsContent = new Table();
-        settingsContent.pad(24f);
-        settingsContent.align(Align.topLeft);
+        settingsContent.pad(24f).align(Align.topLeft);
 
         Image frameImg = new Image(frameDrawable);
         frameImg.setScaling(Scaling.stretch);
-        frameImg.setColor(1, 1, 1, 0.93f);
+        frameImg.setColor(1,1,1,0.93f);
 
-        frameStack = new Stack();
-        frameStack.add(frameImg);
-        frameStack.add(settingsContent);
-
+        frameStack = new Stack(frameImg, settingsContent);
         buildSettingsInnerContent();
 
         Table center = new Table();
@@ -515,60 +547,56 @@ public class GameScreen extends InputAdapter implements Screen {
         setOverlayVisible(false);
     }
 
+    private ImageButton.ImageButtonStyle mkBtnStyle(Skin upPack, Skin overPack, String up, String over, String down) {
+        ImageButton.ImageButtonStyle s = new ImageButton.ImageButtonStyle();
+        s.up = upPack.getDrawable(up);
+        s.over = overPack.getDrawable(over);
+        s.down = overPack.getDrawable(down);
+        return s;
+    }
+
+    private TextButton.TextButtonStyle mkTextStyle(String base, BitmapFont f) {
+        TextButton.TextButtonStyle st = new TextButton.TextButtonStyle();
+        st.up   = buttonSkin.getDrawable(base + "_over");
+        st.over = buttonSkin.getDrawable(base + "_up");
+        st.down = buttonSkin.getDrawable(base + "_down");
+        st.font = f;
+        return st;
+    }
+
     private void buildSettingsInnerContent() {
         Slider.SliderStyle sliderStyle = new Slider.SliderStyle();
         sliderStyle.background = sliderBgDrawable;
         sliderStyle.knob = sliderSkin.getDrawable("knob");
 
-        ImageButton.ImageButtonStyle musicToggleOnStyle = new ImageButton.ImageButtonStyle();
-        musicToggleOnStyle.up = iconSkinActive.getDrawable("row-8-column-8");
-        musicToggleOnStyle.over = iconSkinInactive.getDrawable("row-8-column-7");
-        musicToggleOnStyle.down = iconSkinInactive.getDrawable("row-8-column-9");
+        ImageButton.ImageButtonStyle musicOn = mkBtnStyle(iconSkinActive, iconSkinInactive, "row-8-column-8", "row-8-column-7", "row-8-column-9");
+        ImageButton.ImageButtonStyle musicOff = mkBtnStyle(iconSkinInactive, iconSkinActive, "row-8-column-9", "row-8-column-7", "row-8-column-8");
+        ImageButton.ImageButtonStyle soundOn = mkBtnStyle(iconSkinActive, iconSkinInactive, "row-7-column-8", "row-7-column-7", "row-7-column-9");
+        ImageButton.ImageButtonStyle soundOff = mkBtnStyle(iconSkinInactive, iconSkinActive, "row-7-column-9", "row-7-column-7", "row-7-column-8");
 
-        ImageButton.ImageButtonStyle musicToggleOffStyle = new ImageButton.ImageButtonStyle();
-        musicToggleOffStyle.up = iconSkinInactive.getDrawable("row-8-column-9");
-        musicToggleOffStyle.over = iconSkinActive.getDrawable("row-8-column-7");
-        musicToggleOffStyle.down = iconSkinActive.getDrawable("row-8-column-8");
+        BitmapFont f = titleFont;
 
-        ImageButton.ImageButtonStyle soundToggleOnStyle = new ImageButton.ImageButtonStyle();
-        soundToggleOnStyle.up = iconSkinActive.getDrawable("row-7-column-8");
-        soundToggleOnStyle.over = iconSkinInactive.getDrawable("row-7-column-7");
-        soundToggleOnStyle.down = iconSkinInactive.getDrawable("row-7-column-9");
-
-        ImageButton.ImageButtonStyle soundToggleOffStyle = new ImageButton.ImageButtonStyle();
-        soundToggleOffStyle.up = iconSkinInactive.getDrawable("row-7-column-9");
-        soundToggleOffStyle.over = iconSkinActive.getDrawable("row-7-column-7");
-        soundToggleOffStyle.down = iconSkinActive.getDrawable("row-7-column-8");
-
-        BitmapFont mainFont = titleFont;
-
-        musicBtn = new ImageButton(game.musicEnabled ? musicToggleOnStyle : musicToggleOffStyle);
-        musicBtn.setChecked(!game.musicEnabled);
-        musicBtn.getImage().setScaling(Scaling.stretch);
-        musicBtn.getImage().setSize(48, 48);
+        musicBtn = new ImageButton(game.musicEnabled ? musicOn : musicOff);
         musicBtn.addListener(new ClickListener() {
             @Override public void clicked(InputEvent event, float x, float y) {
                 game.playSound(game.assets.gameClickSound);
                 game.musicEnabled = !game.musicEnabled;
-                musicBtn.setStyle(game.musicEnabled ? musicToggleOnStyle : musicToggleOffStyle);
+                musicBtn.setStyle(game.musicEnabled ? musicOn : musicOff);
                 applyMusicNow();
             }
         });
 
-        soundBtn = new ImageButton(game.soundEnabled ? soundToggleOnStyle : soundToggleOffStyle);
-        soundBtn.setChecked(!game.soundEnabled);
-        soundBtn.getImage().setScaling(Scaling.stretch);
-        soundBtn.getImage().setSize(48, 48);
+        soundBtn = new ImageButton(game.soundEnabled ? soundOn : soundOff);
         soundBtn.addListener(new ClickListener() {
             @Override public void clicked(InputEvent event, float x, float y) {
                 game.playSound(game.assets.gameClickSound);
                 game.soundEnabled = !game.soundEnabled;
-                soundBtn.setStyle(game.soundEnabled ? soundToggleOnStyle : soundToggleOffStyle);
+                soundBtn.setStyle(game.soundEnabled ? soundOn : soundOff);
             }
         });
 
-        musicSlider = new Slider(0f, 1f, 0.01f, false, sliderStyle);
-        soundSlider = new Slider(0f, 1f, 0.01f, false, sliderStyle);
+        musicSlider = new Slider(0f,1f,0.01f,false, sliderStyle);
+        soundSlider = new Slider(0f,1f,0.01f,false, sliderStyle);
 
         float mVol = prefs.getFloat("musicVolume", game.musicVolume);
         float sVol = prefs.getFloat("soundVolume", game.soundVolume);
@@ -578,83 +606,62 @@ public class GameScreen extends InputAdapter implements Screen {
         soundSlider.setValue(sVol);
         applyMusicNow();
 
-        musicSlider.addListener(new ChangeListener() {
-            @Override public void changed(ChangeEvent event, com.badlogic.gdx.scenes.scene2d.Actor actor) {
-                game.musicVolume = musicSlider.getValue();
-                applyMusicNow();
-            }
-        });
-        soundSlider.addListener(new ChangeListener() {
-            @Override public void changed(ChangeEvent event, com.badlogic.gdx.scenes.scene2d.Actor actor) {
-                game.soundVolume = soundSlider.getValue();
-            }
-        });
+        musicSlider.addListener(new ChangeListener() { @Override public void changed(ChangeEvent event, com.badlogic.gdx.scenes.scene2d.Actor actor) {
+            game.musicVolume = musicSlider.getValue();
+            applyMusicNow();
+        }});
+        soundSlider.addListener(new ChangeListener() { @Override public void changed(ChangeEvent event, com.badlogic.gdx.scenes.scene2d.Actor actor) {
+            game.soundVolume = soundSlider.getValue();
+        }});
 
         settingsContent.clear();
         settingsContent.defaults().left();
 
-        settingsContent.add(new Label("Music", new Label.LabelStyle(mainFont, com.badlogic.gdx.graphics.Color.WHITE))).padRight(12);
-        settingsContent.add(musicBtn).size(48, 48).padRight(12);
-        settingsContent.add(musicSlider).width(320).height(48).padLeft(8).padRight(8);
+        settingsContent.add(new Label("Music", new Label.LabelStyle(f, com.badlogic.gdx.graphics.Color.WHITE))).padRight(12);
+        settingsContent.add(musicBtn).size(48,48).padRight(12);
+        settingsContent.add(musicSlider).width(320);
         settingsContent.row().padTop(16);
 
-        settingsContent.add(new Label("Sound", new Label.LabelStyle(mainFont, com.badlogic.gdx.graphics.Color.WHITE))).padRight(12);
-        settingsContent.add(soundBtn).size(48, 48).padRight(12);
-        settingsContent.add(soundSlider).width(320).height(48).padLeft(8).padRight(8);
+        settingsContent.add(new Label("Sound", new Label.LabelStyle(f, com.badlogic.gdx.graphics.Color.WHITE))).padRight(12);
+        settingsContent.add(soundBtn).size(48,48).padRight(12);
+        settingsContent.add(soundSlider).width(320);
         settingsContent.row().padTop(14);
 
-        // ===================== NÚT SAVE/BACK =====================
-        TextButton.TextButtonStyle saveStyle = new TextButton.TextButtonStyle();
-        saveStyle.up   = buttonSkin.getDrawable("SAVE_over");
-        saveStyle.over = buttonSkin.getDrawable("SAVE_up");
-        saveStyle.down = buttonSkin.getDrawable("SAVE_down");
-        saveStyle.font = mainFont;
-
-        TextButton.TextButtonStyle backStyle = new TextButton.TextButtonStyle();
-        backStyle.up   = buttonSkin.getDrawable("BACK_over");
-        backStyle.over = buttonSkin.getDrawable("BACK_up");
-        backStyle.down = buttonSkin.getDrawable("BACK_down");
-        backStyle.font = mainFont;
+        TextButton.TextButtonStyle saveStyle = mkTextStyle("SAVE", f);
+        TextButton.TextButtonStyle backStyle = mkTextStyle("BACK", f);
 
         Drawable measure = buttonSkin.getDrawable("START_up");
-        float btnWidth = measure.getMinWidth() * 1.2f;
-        float btnHeight = measure.getMinHeight() * 1.2f;
+        float bw = measure.getMinWidth() * 1.2f;
+        float bh = measure.getMinHeight() * 1.2f;
 
         saveBtn = new TextButton(" ", saveStyle);
         backBtn = new TextButton(" ", backStyle);
 
-        saveBtn.addListener(new ClickListener() {
-            @Override public void clicked(InputEvent event, float x, float y) {
-                saveSettings();
-                game.playSound(game.assets.gameClickSound);
-                hideSettingsOverlay();
-            }
-        });
-        backBtn.addListener(new ClickListener() {
-            @Override public void clicked(InputEvent event, float x, float y) {
-                game.playSound(game.assets.gameClickSound);
-                onBackNotSave();
-            }
-        });
+        saveBtn.addListener(new ClickListener() { @Override public void clicked(InputEvent event, float x, float y) {
+            saveSettings();
+            game.playSound(game.assets.gameClickSound);
+            hideSettingsOverlay();
+        }});
+        backBtn.addListener(new ClickListener() { @Override public void clicked(InputEvent event, float x, float y) {
+            game.playSound(game.assets.gameClickSound);
+            onBackNotSave();
+        }});
 
-        Table buttonTable = new Table();
-        buttonTable.center();
-        buttonTable.add(saveBtn).size(btnWidth, btnHeight).padRight(12);
-        buttonTable.add(backBtn).size(btnWidth, btnHeight);
+        Table btnRow = new Table();
+        btnRow.add(saveBtn).size(bw, bh).padRight(12);
+        btnRow.add(backBtn).size(bw, bh);
 
-        settingsContent.add(buttonTable).colspan(3).center().padTop(24);
-        settingsContent.row();
+        settingsContent.add(btnRow).colspan(3).center().padTop(24);
     }
 
     private void applyMusicNow() {
-        if (game.assets.themeMusic != null) {
-            game.assets.themeMusic.setLooping(true);
-            game.assets.themeMusic.setVolume(game.musicEnabled ? game.musicVolume : 0f);
-            if (game.musicEnabled) {
-                if (!game.assets.themeMusic.isPlaying()) game.assets.themeMusic.play();
-            } else {
-                if (game.assets.themeMusic.isPlaying()) game.assets.themeMusic.pause();
-            }
+        if (game.assets.themeMusic == null) return;
+        game.assets.themeMusic.setLooping(true);
+        game.assets.themeMusic.setVolume(game.musicEnabled ? game.musicVolume : 0f);
+        if (game.musicEnabled) {
+            if (!game.assets.themeMusic.isPlaying()) game.assets.themeMusic.play();
+        } else if (game.assets.themeMusic.isPlaying()) {
+            game.assets.themeMusic.pause();
         }
     }
 
@@ -667,181 +674,133 @@ public class GameScreen extends InputAdapter implements Screen {
         applyMusicNow();
     }
 
-    private void setOverlayVisible(boolean visible) {
-        settingsShown = visible;
-        overlayRoot.setVisible(visible);
-        frameStack.setVisible(visible);
-        if (visible) {
-            overlayStage.setKeyboardFocus(frameStack);
-            overlayStage.setScrollFocus(frameStack);
-        } else {
-            overlayStage.setKeyboardFocus(null);
-            overlayStage.setScrollFocus(null);
-        }
+    private void setOverlayVisible(boolean v) {
+        settingsShown = v;
+        overlayRoot.setVisible(v);
+        frameStack.setVisible(v);
     }
 
     private void toggleSettingsOverlay() {
-        if (settingsShown) hideSettingsOverlay();
-        else showSettingsOverlay();
+        if (settingsShown) hideSettingsOverlay(); else showSettingsOverlay();
     }
 
     private void showSettingsOverlay() {
         prevMusicEnabled = game.musicEnabled;
         prevSoundEnabled = game.soundEnabled;
-        prevMusicVolume  = game.musicVolume;
-        prevSoundVolume  = game.soundVolume;
-
-        musicBtn.setChecked(!game.musicEnabled);
-        soundBtn.setChecked(!game.soundEnabled);
-        musicSlider.setValue(game.musicVolume);
-        soundSlider.setValue(game.soundVolume);
+        prevMusicVolume = game.musicVolume;
+        prevSoundVolume = game.soundVolume;
         setOverlayVisible(true);
     }
 
     private void onBackNotSave() {
         game.musicEnabled = prevMusicEnabled;
         game.soundEnabled = prevSoundEnabled;
-        game.musicVolume  = prevMusicVolume;
-        game.soundVolume  = prevSoundVolume;
+        game.musicVolume = prevMusicVolume;
+        game.soundVolume = prevSoundVolume;
         applyMusicNow();
         hideSettingsOverlay();
     }
 
     private void hideSettingsOverlay() { setOverlayVisible(false); }
 
-    // ========= Exit confirm & Victory =========
-
     private void showVictoryDialog() {
-        final float DIALOG_W = 520f, DIALOG_H = 220f;
-        final Table dialog = new Table();
-        dialog.setBackground(frameDrawable);
-        dialog.pad(16f);
-        dialog.setSize(DIALOG_W, DIALOG_H);
+        final float W = 520f, H = 220f;
+        final Table dialog = baseDialog("VICTORY!\nYOU CLEARED ALL 20 WAVES", 0.9f);
 
-        Label.LabelStyle ls = new Label.LabelStyle(titleFont, com.badlogic.gdx.graphics.Color.WHITE);
-        Label msg = new Label("VICTORY!\nYOU CLEARED ALL 20 WAVES", ls);
-        msg.setAlignment(Align.center);
-        msg.setFontScale(0.9f);
-        msg.setWrap(true);
-
-        Table msgWrap = new Table();
-        msgWrap.add(msg).width(DIALOG_W - 48f).center();
-
-        TextButton.TextButtonStyle okStyle = new TextButton.TextButtonStyle();
-        okStyle.up   = buttonSkin.getDrawable("SAVE_over");
-        okStyle.over = buttonSkin.getDrawable("SAVE_up");
-        okStyle.down = buttonSkin.getDrawable("SAVE_down");
-        okStyle.font = titleFont;
-
-        TextButton ok = new TextButton("", okStyle);
-
-        Drawable measure = buttonSkin.getDrawable("START_up");
-        float w = measure.getMinWidth() * 1.35f;
-        float h = measure.getMinHeight() * 1.35f;
+        TextButton ok = new TextButton(" ", mkTextStyle("SAVE", titleFont));
+        sizeDialogButton(ok);
 
         Table btns = new Table();
-        btns.add(ok).size(w, h);
-
-        dialog.add(msgWrap).expand().fill().center().row();
+        btns.add(ok);
         dialog.add(btns).center().padTop(12);
 
-        dialog.setPosition(
-            overlayStage.getViewport().getWorldWidth() / 2f - dialog.getWidth() / 2f,
-            overlayStage.getViewport().getWorldHeight() / 2f - dialog.getHeight() / 2f
-        );
-
+        centerDialog(dialog, W, H);
         overlayStage.addActor(dialog);
 
-        ok.addListener(new ClickListener() {
-            @Override public void clicked(InputEvent event, float x, float y) {
-                dialog.remove();
-                world.clearVictory();
-                exitToSelectLevel();
-            }
-        });
+        ok.addListener(new ClickListener() { @Override public void clicked(InputEvent event, float x, float y) {
+            dialog.remove();
+            world.clearVictory();
+            exitToSelectLevel();
+        }});
     }
 
     private void showExitToSelectConfirm() {
-        final float DIALOG_W = 520f, DIALOG_H = 220f;
-        final Table dialog = new Table();
+        final float W = 520f, H = 220f;
+        final Table dialog = baseDialog("EXIT TO LEVEL SELECT?\nPROGRESS WILL BE SAVED AS A CHECKPOINT", 0.8f);
+
+        TextButton ok = new TextButton(" ", mkTextStyle("SAVE", titleFont));
+        TextButton cancel = new TextButton(" ", mkTextStyle("BACK", titleFont));
+        sizeDialogButton(ok);
+        sizeDialogButton(cancel);
+
+        Table btns = new Table();
+        btns.add(ok).padRight(16);
+        btns.add(cancel);
+        dialog.add(btns).center().padTop(24);
+
+        centerDialog(dialog, W, H);
+        overlayStage.addActor(dialog);
+
+        ok.addListener(new ClickListener() { @Override public void clicked(InputEvent event, float x, float y) {
+            int next = computeNextWaveForSave();
+            SaveManager.saveCheckpoint(level, world, next);
+            dialog.remove();
+            exitToSelectLevel();
+        }});
+        cancel.addListener(new ClickListener() { @Override public void clicked(InputEvent event, float x, float y) { dialog.remove(); }});
+    }
+
+    private Table baseDialog(String text, float scale) {
+        Table dialog = new Table();
         dialog.setBackground(frameDrawable);
         dialog.pad(16f);
-        dialog.setSize(DIALOG_W, DIALOG_H);
-
         Label.LabelStyle ls = new Label.LabelStyle(titleFont, com.badlogic.gdx.graphics.Color.WHITE);
-        Label msg = new Label("EXIT TO LEVEL SELECT?\nPROGRESS WILL BE SAVED AS A CHECKPOINT", ls);
+        Label msg = new Label(text, ls);
         msg.setAlignment(Align.center);
-        msg.setFontScale(0.8f);
+        msg.setFontScale(scale);
         msg.setWrap(true);
+        Table wrap = new Table();
+        wrap.add(msg).width(520f - 48f).center();
+        dialog.add(wrap).expand().fill().row();
+        return dialog;
+    }
 
-        Table msgWrap = new Table();
-        msgWrap.add(msg).width(DIALOG_W - 48f).center();
+    private void centerDialog(Table dialog, float w, float h) {
+        dialog.setSize(w, h);
+        dialog.setPosition(
+            overlayStage.getViewport().getWorldWidth() / 2f - w / 2f,
+            overlayStage.getViewport().getWorldHeight() / 2f - h / 2f
+        );
+    }
 
-        TextButton.TextButtonStyle okStyle = new TextButton.TextButtonStyle();
-        okStyle.up   = buttonSkin.getDrawable("SAVE_over");
-        okStyle.over = buttonSkin.getDrawable("SAVE_up");
-        okStyle.down = buttonSkin.getDrawable("SAVE_down");
-        okStyle.font = titleFont;
-
-        TextButton.TextButtonStyle cancelStyle = new TextButton.TextButtonStyle();
-        cancelStyle.up   = buttonSkin.getDrawable("BACK_over");
-        cancelStyle.over = buttonSkin.getDrawable("BACK_up");
-        cancelStyle.down = buttonSkin.getDrawable("BACK_down");
-        cancelStyle.font = titleFont;
-
-        TextButton ok = new TextButton("", okStyle);
-        TextButton cancel = new TextButton("", cancelStyle);
-
+    private void sizeDialogButton(TextButton btn) {
         Drawable measure = buttonSkin.getDrawable("START_up");
         float w = measure.getMinWidth() * 1.35f;
         float h = measure.getMinHeight() * 1.35f;
-
-        Table btns = new Table();
-        btns.add(ok).size(w, h).padRight(16);
-        btns.add(cancel).size(w, h);
-
-        dialog.add(msgWrap).expand().fill().center().row();
-        dialog.add(btns).center().padTop(24);
-
-        dialog.setPosition(
-            overlayStage.getViewport().getWorldWidth() / 2f - dialog.getWidth() / 2f,
-            overlayStage.getViewport().getWorldHeight() / 2f - dialog.getHeight() / 2f
-        );
-
-        overlayStage.addActor(dialog);
-
-        ok.addListener(new ClickListener() {
-            @Override public void clicked(InputEvent event, float x, float y) {
-                int nextWave = computeNextWaveForSave();
-                SaveManager.saveCheckpoint(level, world, nextWave);
-                dialog.remove();
-                exitToSelectLevel();
-            }
-        });
-        cancel.addListener(new ClickListener() {
-            @Override public void clicked(InputEvent event, float x, float y) {
-                dialog.remove();
-            }
-        });
+        btn.setSize(w, h);
     }
 
     private void exitToSelectLevel() {
         setOverlayVisible(false);
-        game.setScreen(new SelectLevelScreen(game));
+        game.setScreen(new com.mygdx.td.screens.SelectLevelScreen(game));
     }
 
-    @Override public void resize(int w, int h) {
+    @Override
+    public void resize(int w, int h) {
         viewport.update(w, h, true);
         camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0);
         camera.update();
-        if (hud != null) hud.getStage().getViewport().update(w, h, true);
-        if (overlayStage != null) overlayStage.getViewport().update(w, h, true);
+        hud.getStage().getViewport().update(w, h, true);
+        overlayStage.getViewport().update(w, h, true);
     }
+
     @Override public void show() {}
     @Override public void hide() {}
     @Override public void pause() { gamePaused = true; }
     @Override public void resume() { gamePaused = false; }
-    @Override public void dispose() {
+
+    @Override
+    public void dispose() {
         hud.dispose();
         if (mapRenderer != null) mapRenderer.dispose();
         if (tiledMap != null) tiledMap.dispose();
@@ -851,10 +810,8 @@ public class GameScreen extends InputAdapter implements Screen {
         enemyVisuals.clear();
         for (EnemyVisual v : dyingEnemyVisuals.values()) v.dispose();
         dyingEnemyVisuals.clear();
-
-        if (overlayStage != null) {
-            overlayStage.dispose();
-            overlayStage = null;
-        }
+        for (AllyUnitVisual v : allyVisuals.values()) v.dispose();
+        allyVisuals.clear();
+        if (overlayStage != null) overlayStage.dispose();
     }
 }
