@@ -62,6 +62,12 @@ import com.mygdx.td.world.World;
 import java.util.HashSet;
 import java.util.Set;
 
+/**
+ * GameScreen
+ * Giữ nguyên logic gameplay, đã thêm ally visual + vẽ arrow (arrowTex) xoay theo góc bullet.angleDeg.
+ * Thứ tự vẽ: Enemies -> Dying -> HP bars -> Towers -> Allies -> Bullets.
+ * ĐÃ THÊM: âm thanh & dialog Victory / Defeat (lose).
+ */
 public class GameScreen extends InputAdapter implements Screen {
 
     private final TDGame game;
@@ -83,12 +89,20 @@ public class GameScreen extends InputAdapter implements Screen {
     private TowerSpot selectedSpot;
     private Tower selectedTower;
 
+    final int MAP_WIDTH_TILES = 30;
+    final int MAP_HEIGHT_TILES = 17;
+    final int TILE_SIZE = 32; // hoặc 64 nếu bạn dùng tile lớn
+
+    final int MAP_WIDTH_PX = MAP_WIDTH_TILES * TILE_SIZE;
+    final int MAP_HEIGHT_PX = MAP_HEIGHT_TILES * TILE_SIZE;
+
     private final UIHud hud;
     private boolean gamePaused = false;
     private final int level;
     private boolean victoryShown = false;
+    private boolean gameOverShown = false; // NEW
 
-    // FRAME CONFIG
+    // Enemy frame config
     private static final int SMALL_FRAME_W = 48;
     private static final int SMALL_FRAME_H = 48;
     private static final int SMALL_FRAME_COUNT = 6;
@@ -97,21 +111,24 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final int LARGE_FRAME_W = 96;
     private static final int LARGE_FRAME_H = 96;
     private static final int LARGE_FRAME_COUNT = 6;
-    private static final float LARGE_TILE_SIZE = 128f;
+    private static final float LARGE_TILE_SIZE = 96f;
 
     private static final float WALK_FRAME_SEC = 0.12f;
     private static final float DEATH_FRAME_SEC = 0.10f;
     private static final boolean BASE_FACES_RIGHT = false;
 
+    // Ally visuals
     private static final float ALLY_FRAME_W = 48f;
     private static final float ALLY_FRAME_H = 48f;
     private static final float ALLY_TILE_SIZE = 48f;
-    private static final String ALLY_ASSET_FOLDER = "allies/archer"; // Sửa lại nếu bạn dùng tên khác
+    private static final String ALLY_ASSET_FOLDER = "allies/archer";
 
+    // HP bar
     private static final float HP_BAR_WIDTH = 40f;
     private static final float HP_BAR_HEIGHT = 6f;
     private static final float HP_BAR_Y_OFFSET = 38f;
 
+    // Settings overlay
     private Stage overlayStage;
     private boolean settingsShown = false;
     private Table overlayRoot;
@@ -137,7 +154,8 @@ public class GameScreen extends InputAdapter implements Screen {
         this.level = level;
 
         camera = new OrthographicCamera();
-        viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
+//        viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
+        viewport = new FitViewport(MAP_WIDTH_PX, MAP_HEIGHT_PX, camera);
         camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0f);
         camera.update();
 
@@ -185,6 +203,7 @@ public class GameScreen extends InputAdapter implements Screen {
         return Gdx.files.internal(cand).exists() ? cand : "maps/level1.tmx";
     }
 
+    /* ================= MAP / PATH ================= */
     private void loadMap() {
         try {
             tiledMap = new TmxMapLoader().load(mapPath);
@@ -234,6 +253,7 @@ public class GameScreen extends InputAdapter implements Screen {
         if (loadedWaypoints.size >= 2) world.path.loadFrom(loadedWaypoints);
     }
 
+    /* ================= SAVE / RESUME ================= */
     private void attemptResumeFromCheckpoint() {
         GameState s = SaveManager.loadCheckpoint();
         if (s == null || s.level != this.level) return;
@@ -257,10 +277,14 @@ public class GameScreen extends InputAdapter implements Screen {
         return Math.max(1, cur + (in ? 0 : 1));
     }
 
+    /* ================= ENEMY VISUALS ================= */
     private static boolean isLarge(EnemyType type) {
         switch (type) {
+            case ELITE_TANK:
+            case ELITE_GRUNT:
             case RUNNER:
             case MINI_BOSS:
+            case MINI_BOSS_2:
             case MID_BOSS:
             case FINAL_BOSS:
                 return true;
@@ -277,9 +301,8 @@ public class GameScreen extends InputAdapter implements Screen {
             case ELITE_GRUNT:   return "enemies/elite_grunt";
             case ELITE_RUNNER:  return "enemies/elite_runner";
             case ELITE_TANK:    return "enemies/elite_tank";
-            case MINI_BOSS:     return "enemies/mini_boss";
+            case MINI_BOSS, MINI_BOSS_2:     return "enemies/mini_boss";
             case MID_BOSS:      return "enemies/mid_boss";
-            case MINI_BOSS_2:   return "enemies/mini_boss";
             case FINAL_BOSS:    return "enemies/final_boss";
             default:            return "enemies/grunt";
         }
@@ -338,10 +361,16 @@ public class GameScreen extends InputAdapter implements Screen {
         for (Enemy e : remove) dyingEnemyVisuals.remove(e);
     }
 
+    /* ================= ALLY VISUALS ================= */
     private void syncAllyVisuals() {
         for (AllyUnit ally : world.allies) {
             if (!allyVisuals.containsKey(ally)) {
-                allyVisuals.put(ally, new AllyUnitVisual(ALLY_ASSET_FOLDER, (int)ALLY_FRAME_W, (int)ALLY_FRAME_H, ALLY_TILE_SIZE));
+                allyVisuals.put(ally, new AllyUnitVisual(
+                    ALLY_ASSET_FOLDER,
+                    (int) ALLY_FRAME_W,
+                    (int) ALLY_FRAME_H,
+                    ALLY_TILE_SIZE
+                ));
             }
         }
         Set<AllyUnit> toRemove = new HashSet<>();
@@ -355,15 +384,30 @@ public class GameScreen extends InputAdapter implements Screen {
         for (AllyUnit ally : toRemove) allyVisuals.remove(ally);
     }
 
+    /* ================= RENDER ================= */
     @Override
     public void render(float delta) {
         if (!gamePaused) {
             world.update(delta);
 
+            // Victory
             if (world.isVictory() && !victoryShown) {
                 victoryShown = true;
                 SaveManager.clearCheckpoint();
+                if (game.assets.win_sound != null && game.soundEnabled) {
+                    game.playSound(game.assets.win_sound);
+                }
                 showVictoryDialog();
+            }
+
+            // Defeat
+            if (world.gameOver && !gameOverShown && !victoryShown) {
+                gameOverShown = true;
+                SaveManager.clearCheckpoint();
+                if (game.assets.lose_sound != null && game.soundEnabled) {
+                    game.playSound(game.assets.lose_sound);
+                }
+                showGameOverDialog();
             }
 
             syncEnemyVisuals();
@@ -384,22 +428,16 @@ public class GameScreen extends InputAdapter implements Screen {
         game.batch.setProjectionMatrix(camera.combined);
         game.batch.begin();
 
-        // Allies
-        for (AllyUnit ally : world.allies) {
-            AllyUnitVisual v = allyVisuals.get(ally);
-            if (v != null) v.draw(game.batch, ally, ally.stateTime);
-        }
-
-        // Enemies
+        // 1. Enemies
         for (Enemy e : world.enemies) {
             EnemyVisual v = enemyVisuals.get(e);
             if (v != null) v.draw(game.batch, e);
         }
+        // 2. Dying enemies
         for (ObjectMap.Entry<Enemy, EnemyVisual> entry : dyingEnemyVisuals.entries()) {
             entry.value.draw(game.batch, entry.key);
         }
-
-        // HP bars (enemies)
+        // 3. Enemy HP bars
         for (Enemy e : world.enemies) {
             if (e.isDead()) continue;
             float pct = Math.max(0f, Math.min(1f, e.getHpPercent()));
@@ -412,8 +450,7 @@ public class GameScreen extends InputAdapter implements Screen {
             game.batch.draw(game.assets.whitePixel, bx, by, bw * pct, bh);
             game.batch.setColor(1, 1, 1, 1);
         }
-
-        // Towers
+        // 4. Towers
         for (Tower t : world.towers) {
             TowerVisual v = towerVisuals.get(t);
             if (v == null) {
@@ -424,10 +461,39 @@ public class GameScreen extends InputAdapter implements Screen {
             v.update(t, delta);
             v.draw(game.batch, t);
         }
-
-        // Bullets
+        // 5. Allies
+        for (AllyUnit ally : world.allies) {
+            AllyUnitVisual v = allyVisuals.get(ally);
+            if (v != null) v.draw(game.batch, ally, ally.stateTime);
+        }
+        // 6. Bullets (arrow rotated)
         for (Bullet b : world.bullets) {
-            game.batch.draw(game.assets.bulletTex, b.pos.x - 8, b.pos.y - 8, 16, 16);
+            Texture tex = game.assets.arrowTex != null ? game.assets.arrowTex : game.assets.bulletTex;
+            if (tex == null) continue;
+
+            float texW = tex.getWidth();
+            float texH = tex.getHeight();
+            float drawW = texW;
+            float drawH = texH;
+
+            float originX = drawW * 0.15f;
+            float originY = drawH / 2f;
+
+            game.batch.draw(
+                tex,
+                b.pos.x - originX,
+                b.pos.y - originY,
+                originX,
+                originY,
+                drawW,
+                drawH,
+                1f,
+                1f,
+                b.angleDeg,
+                0, 0,
+                (int) texW, (int) texH,
+                false, false
+            );
         }
 
         game.batch.end();
@@ -440,6 +506,7 @@ public class GameScreen extends InputAdapter implements Screen {
         overlayStage.draw();
     }
 
+    /* ================= INPUT ================= */
     @Override
     public boolean touchDown(int screenX, int screenY, int pointer, int button) {
         camera.update();
@@ -485,6 +552,7 @@ public class GameScreen extends InputAdapter implements Screen {
         return null;
     }
 
+    /* ================= SETTINGS OVERLAY ================= */
     private void buildSettingsOverlay() {
         prefs = Gdx.app.getPreferences("td_settings");
         try {
@@ -703,6 +771,7 @@ public class GameScreen extends InputAdapter implements Screen {
 
     private void hideSettingsOverlay() { setOverlayVisible(false); }
 
+    /* ================= DIALOGS ================= */
     private void showVictoryDialog() {
         final float W = 520f, H = 220f;
         final Table dialog = baseDialog("VICTORY!\nYOU CLEARED ALL 20 WAVES", 0.9f);
@@ -722,6 +791,40 @@ public class GameScreen extends InputAdapter implements Screen {
             world.clearVictory();
             exitToSelectLevel();
         }});
+    }
+
+    private void showGameOverDialog() {
+        final float W = 520f, H = 220f;
+        final Table dialog = baseDialog("DEFEAT!\nTRY AGAIN?", 0.9f);
+
+        TextButton retry = new TextButton(" ", mkTextStyle("SAVE", titleFont));
+        TextButton exit  = new TextButton(" ", mkTextStyle("BACK", titleFont));
+        sizeDialogButton(retry);
+        sizeDialogButton(exit);
+
+        Table btns = new Table();
+        btns.add(retry).padRight(16);
+        btns.add(exit);
+        dialog.add(btns).center().padTop(18);
+
+        centerDialog(dialog, W, H);
+        overlayStage.addActor(dialog);
+
+        retry.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) {
+                dialog.remove();
+                world.reset();
+                victoryShown = false;
+                gameOverShown = false;
+                // Chờ người chơi bấm start wave lại (HUD) -> không tự start để họ chuẩn bị.
+            }
+        });
+        exit.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) {
+                dialog.remove();
+                exitToSelectLevel();
+            }
+        });
     }
 
     private void showExitToSelectConfirm() {
@@ -785,10 +888,11 @@ public class GameScreen extends InputAdapter implements Screen {
         game.setScreen(new com.mygdx.td.screens.SelectLevelScreen(game));
     }
 
+    /* ================= LIFECYCLE ================= */
     @Override
     public void resize(int w, int h) {
         viewport.update(w, h, true);
-        camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0);
+        camera.position.set(MAP_WIDTH_PX / 2f, MAP_HEIGHT_PX / 2f, 0);
         camera.update();
         hud.getStage().getViewport().update(w, h, true);
         overlayStage.getViewport().update(w, h, true);

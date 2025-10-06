@@ -11,7 +11,7 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion;
 
 /**
  * Quản lý toàn bộ asset.
- * LƯU Ý: .fnt phải load bằng BitmapFont.class, không phải Texture.class.
+ * THÊM: arrowTex (mũi tên) ở projectiles/arrow/arrow.png
  */
 public class Assets {
     public final AssetManager manager = new AssetManager();
@@ -19,8 +19,9 @@ public class Assets {
     // Gameplay
     public Texture enemyTex;
     public Texture towerTex;
-    public Texture bulletTex;
-    public Texture backgroundTex; // gameplay background (nếu có)
+    public Texture bulletTex;   // (giữ nguyên nếu còn nơi dùng cũ)
+    public Texture arrowTex;    // mũi tên mới
+    public Texture backgroundTex;
 
     // UI
     public Texture btnUp;
@@ -31,7 +32,7 @@ public class Assets {
     public Texture musicOff;
     public Texture soundOn;
     public Texture soundOff;
-    public Texture menuBg; // ui/background.jpg (background menu)
+    public Texture menuBg;
 
     // Fonts
     public BitmapFont fontSmall;
@@ -40,21 +41,24 @@ public class Assets {
     // Utility
     public Texture whitePixel;
 
-    // Sound effects
+    // Sounds
     public Sound shootSound;
-    // Nhạc nền dùng Music!
     public Music themeMusic;
     public Sound gameClickSound;
     public Sound laserGunSound;
     public Sound selectLevelSound;
     public Sound upgradeTowerSound;
+    public Sound arrowShootSound;
+    public Sound win_sound;
+    public Sound lose_sound;
 
     public void loadAllAsync() {
         // Gameplay textures
         safeLoadTexture("enemy.png");
         safeLoadTexture("tower.png");
-        safeLoadTexture("bullet.png");
-        safeLoadTexture("background.png"); // optional
+        safeLoadTexture("13.png"); // bullet cũ
+        safeLoadTexture("projectiles/arrow/arrow.png"); // arrow
+        safeLoadTexture("background.png");
 
         // UI textures
         safeLoadTexture("ui/button_up.png");
@@ -65,20 +69,21 @@ public class Assets {
         safeLoadTexture("ui/music_off.png");
         safeLoadTexture("ui/sound_on.png");
         safeLoadTexture("ui/sound_off.png");
-        safeLoadTexture("ui/background.png"); // menu background
+        safeLoadTexture("ui/background.png");
 
-        // Fonts (.fnt)
+        // Fonts
         safeLoadFont("font/font-small.fnt");
 
-        // Sound effects
+        // Sounds
         safeLoadSound("sounds/shoot.mp3");
-
-        // Music (theme)
         safeLoadMusic("sounds/themeMusic.mp3");
         safeLoadSound("sounds/game_click.wav");
         safeLoadSound("sounds/laser_gun.wav");
         safeLoadSound("sounds/select_level.wav");
         safeLoadSound("sounds/upgrade_tower.wav");
+        safeLoadSound("sounds/arrow_shoot.mp3");
+        safeLoadSound("sounds/win_sound.wav");
+        safeLoadSound("sounds/lose_sound.wav");
     }
 
     private void safeLoadTexture(String path) {
@@ -88,7 +93,6 @@ public class Assets {
             Gdx.app.error("ASSETS", "Không tìm thấy file texture: " + path);
         }
     }
-
     private void safeLoadFont(String path) {
         if (Gdx.files.internal(path).exists()) {
             manager.load(path, BitmapFont.class);
@@ -96,7 +100,6 @@ public class Assets {
             Gdx.app.error("ASSETS", "Không tìm thấy file font: " + path);
         }
     }
-
     private void safeLoadSound(String path) {
         if (Gdx.files.internal(path).exists()) {
             manager.load(path, Sound.class);
@@ -104,7 +107,6 @@ public class Assets {
             Gdx.app.error("ASSETS", "Không tìm thấy file sound: " + path);
         }
     }
-
     private void safeLoadMusic(String path) {
         if (Gdx.files.internal(path).exists()) {
             manager.load(path, Music.class);
@@ -121,7 +123,8 @@ public class Assets {
 
         enemyTex      = getTex("enemy.png");
         towerTex      = getTex("tower.png");
-        bulletTex     = getTex("bullet.png");
+        bulletTex     = getTex("13.png");
+        arrowTex      = getTex("projectiles/arrow/arrow.png");
         backgroundTex = getTex("background.png");
 
         btnUp    = getTex("ui/button_up.png");
@@ -134,14 +137,15 @@ public class Assets {
         soundOff = getTex("ui/sound_off.png");
         menuBg   = getTex("ui/background.png");
 
-        // Sound effects
-        shootSound = getSound("sounds/shoot.mp3");
-        // Music
-        themeMusic = getMusic("sounds/themeMusic.mp3");
-        gameClickSound = getSound("sounds/game_click.wav");
-        laserGunSound = getSound("sounds/laser_gun.wav");
-        selectLevelSound = getSound("sounds/select_level.wav");
+        shootSound        = getSound("sounds/shoot.mp3");
+        themeMusic        = getMusic("sounds/themeMusic.mp3");
+        gameClickSound    = getSound("sounds/game_click.wav");
+        laserGunSound     = getSound("sounds/laser_gun.wav");
+        selectLevelSound  = getSound("sounds/select_level.wav");
         upgradeTowerSound = getSound("sounds/upgrade_tower.wav");
+        arrowShootSound = getSound("sounds/arrow_shoot.mp3");
+        win_sound = getSound("sounds/win_sound.wav");
+        lose_sound = getSound("sounds/lose_sound.wav");
 
         if (menuBg == null) {
             Gdx.app.error("ASSETS", "menuBg NULL - kiểm tra tên file: ui/background.png");
@@ -153,7 +157,6 @@ public class Assets {
             fontSmall  = manager.get("font/font-small.fnt", BitmapFont.class);
             fontMedium = fontSmall;
         } else {
-            // fallback nếu không có font
             fontSmall = new BitmapFont();
             fontMedium = fontSmall;
         }
@@ -164,24 +167,24 @@ public class Assets {
     private Texture getTex(String path) {
         return manager.isLoaded(path) ? manager.get(path, Texture.class) : null;
     }
-
     private Sound getSound(String path) {
         return manager.isLoaded(path) ? manager.get(path, Sound.class) : null;
     }
-
     private Music getMusic(String path) {
         return manager.isLoaded(path) ? manager.get(path, Music.class) : null;
     }
 
     private void applyFilters() {
-        // Pixel art nhỏ (icon) dùng Nearest để phóng không mờ
-        Texture[] pixelIcons = { musicOn, musicOff, soundOn, soundOff };
-        for (Texture t : pixelIcons) {
+        // Arrow & bullet dùng Nearest để sắc nét
+        Texture[] nearestList = {
+            arrowTex, bulletTex, musicOn, musicOff, soundOn, soundOff
+        };
+        for (Texture t : nearestList) {
             if (t != null) t.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         }
 
         Texture[] linearList = {
-            enemyTex, towerTex, bulletTex, backgroundTex,
+            enemyTex, towerTex, backgroundTex,
             btnUp, btnOver, btnDown, logoTex, menuBg
         };
         for (Texture t : linearList) {

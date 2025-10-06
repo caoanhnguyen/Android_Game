@@ -5,6 +5,10 @@ import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.*;
 import com.badlogic.gdx.utils.Disposable;
 
+/**
+ * AllyUnitVisual – vẽ idle, preattack (1 frame) và attack (strip).
+ * Giả định strip SIDE hướng nhìn gốc sang PHẢI.
+ */
 public class AllyUnitVisual implements Disposable {
 
     private final Animation<TextureRegion> idleSide, idleDown, idleUp;
@@ -43,9 +47,9 @@ public class AllyUnitVisual implements Disposable {
         attackDown = buildAnim(texAttackDown, frameW, frameH, 4, 0.12f, Animation.PlayMode.NORMAL);
         attackUp   = buildAnim(texAttackUp,   frameW, frameH, 4, 0.12f, Animation.PlayMode.NORMAL);
 
-        preattackSide = buildRegion(texPreattackSide, frameW, frameH);
-        preattackDown = buildRegion(texPreattackDown, frameW, frameH);
-        preattackUp   = buildRegion(texPreattackUp,   frameW, frameH);
+        preattackSide = buildSingle(texPreattackSide, frameW, frameH);
+        preattackDown = buildSingle(texPreattackDown, frameW, frameH);
+        preattackUp   = buildSingle(texPreattackUp,   frameW, frameH);
     }
 
     private Texture load(String path) {
@@ -69,53 +73,77 @@ public class AllyUnitVisual implements Disposable {
         return a;
     }
 
-    private TextureRegion buildRegion(Texture tex, int w, int h) {
+    private TextureRegion buildSingle(Texture tex, int w, int h) {
         if (tex == null) return null;
         return new TextureRegion(tex, 0, 0, w, h);
     }
 
+    private Animation<TextureRegion> pickIdle(AllyUnit.Facing f) {
+        switch (f) {
+            case UP: return idleUp != null ? idleUp : idleSide;
+            case DOWN: return idleDown != null ? idleDown : idleSide;
+            case SIDE:
+            default: return idleSide;
+        }
+    }
+
+    private Animation<TextureRegion> pickAttack(AllyUnit.Facing f) {
+        switch (f) {
+            case UP: return attackUp != null ? attackUp : attackSide;
+            case DOWN: return attackDown != null ? attackDown : attackSide;
+            case SIDE:
+            default: return attackSide;
+        }
+    }
+
+    private TextureRegion pickPreattack(AllyUnit.Facing f) {
+        switch (f) {
+            case UP: return preattackUp != null ? preattackUp : preattackSide;
+            case DOWN: return preattackDown != null ? preattackDown : preattackSide;
+            case SIDE:
+            default: return preattackSide;
+        }
+    }
+
     public void draw(Batch batch, AllyUnit unit, float stateTime) {
-        Animation<TextureRegion> anim = null;
-        TextureRegion region = null;
+        if (unit.state == AllyUnit.State.DEAD) return;
+
+        TextureRegion frame = null;
         switch (unit.state) {
-            case ATTACK:
-                anim = facingAnim(unit.facing, attackSide, attackDown, attackUp);
-                break;
             case PREATTACK:
-                region = facingRegion(unit.facing, preattackSide, preattackDown, preattackUp);
+                frame = pickPreattack(unit.facing);
                 break;
-            case DEAD:
-                return;
+            case ATTACK:
+                Animation<TextureRegion> at = pickAttack(unit.facing);
+                if (at != null) frame = at.getKeyFrame(stateTime, false);
+                break;
             case IDLE:
             default:
-                anim = facingAnim(unit.facing, idleSide, idleDown, idleUp);
+                Animation<TextureRegion> id = pickIdle(unit.facing);
+                if (id != null) frame = id.getKeyFrame(stateTime, true);
+                break;
         }
-        TextureRegion frame;
-        if (region != null) frame = region;
-        else if (anim != null) frame = anim.getKeyFrame(stateTime, unit.state == AllyUnit.State.IDLE);
-        else return;
+        if (frame == null) return;
 
         float scale = tileSize / (float) frameH;
-        float w = frameW * scale;
-        float h = frameH * scale;
-        float x = unit.pos.x - w / 2f;
-        float y = unit.pos.y - (tileSize * 0.5f);
+        float w = frame.getRegionWidth() * scale;
+        float h = frame.getRegionHeight() * scale;
 
-        batch.draw(frame, x, y, w, h);
-    }
+        float drawX = unit.pos.x - w / 2f;
+        float drawY = unit.pos.y - h / 2f;
 
-    private Animation<TextureRegion> facingAnim(AllyUnit.Facing facing, Animation<TextureRegion> side, Animation<TextureRegion> down, Animation<TextureRegion> up) {
-        switch (facing) {
-            case UP: return up != null ? up : side;
-            case DOWN: return down != null ? down : side;
-            case SIDE: default: return side;
+        boolean flipX = false;
+        if (unit.facing == AllyUnit.Facing.SIDE) {
+            // Nếu strip gốc nhìn sang PHẢI: cần flip khi facingRight == false
+            if (unit.facingRight) {
+                flipX = true;
+            }
         }
-    }
-    private TextureRegion facingRegion(AllyUnit.Facing facing, TextureRegion side, TextureRegion down, TextureRegion up) {
-        switch (facing) {
-            case UP: return up != null ? up : side;
-            case DOWN: return down != null ? down : side;
-            case SIDE: default: return side;
+
+        if (flipX) {
+            batch.draw(frame, drawX + w, drawY, -w, h);
+        } else {
+            batch.draw(frame, drawX, drawY, w, h);
         }
     }
 

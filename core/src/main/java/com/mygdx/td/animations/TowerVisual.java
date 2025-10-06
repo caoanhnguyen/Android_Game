@@ -9,7 +9,10 @@ import com.mygdx.td.entities.Tower;
 import com.mygdx.td.entities.TowerType;
 
 /**
- * TowerVisual: vẽ idle animation + hiệu ứng upgrade đúng file B_UpgradeX.png của loại trụ mới.
+ * TowerVisual:
+ *  - Hiển thị idle animation theo cấp hiện tại.
+ *  - Hiệu ứng upgrade / place dùng cùng strip upgrade.
+ *  - Hỗ trợ syncInstant(...) để đồng bộ ngay lập tức khi restore (bỏ animation).
  */
 public class TowerVisual {
     private static final int FRAME_W = 70;
@@ -38,14 +41,13 @@ public class TowerVisual {
         if (upgradeTex != null) { upgradeTex.dispose(); upgradeTex = null; }
     }
 
-    public void loadForType(TowerType type) {
+    private void loadForType(TowerType type) {
         disposeIfNeeded();
         currentType = type;
 
         idleTex = new Texture(Gdx.files.internal("towers/" + type.assetFolder + "/" + type.idleFile));
         idleTex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
 
-        // Dùng upgrade file của loại trụ mới!
         upgradeTex = new Texture(Gdx.files.internal("towers/" + type.assetFolder + "/" + type.upgradeFile));
         upgradeTex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
 
@@ -69,28 +71,66 @@ public class TowerVisual {
         return anim;
     }
 
+    /** Animation khi đặt trụ lần đầu (dùng chung với upgrade strip). */
     public void triggerPlace() {
         isUpgrading = true;
         animTime = 0f;
     }
 
+    /** Animation khi nâng cấp. */
     public void triggerUpgrade() {
         isUpgrading = true;
         animTime = 0f;
     }
 
-    public void changeType(TowerType type) {
+    /**
+     * Đổi loại/cấp (khi tower.type thay đổi). Luôn kích hoạt upgrade animation.
+     */
+    private void changeType(TowerType type) {
         loadForType(type);
         triggerUpgrade();
     }
 
-    public void update(Tower t, float dt) {
-        if (currentType != t.type) {
-            changeType(t.type);
+    /**
+     * Đồng bộ tức thì – dùng sau khi restore:
+     *  - Bỏ mọi animation placing/upgrade.
+     *  - Đảm bảo idleAnim hiển thị đúng cấp ngay lập tức.
+     */
+    public void syncInstant(Tower tower) {
+        if (currentType != tower.type) {
+            loadForType(tower.type);
         }
-        if (t.getState() == Tower.State.UPGRADING && !isUpgrading) {
+        isUpgrading = false;
+        animTime = 0f;
+    }
+
+    /**
+     * Cập nhật animation.
+     * @param t  tower logic
+     * @param dt delta time (khi pause có thể truyền 0 để giữ khung hiện tại)
+     */
+    public void update(Tower t, float dt) {
+        // Nếu cấp thay đổi (upgrade logic đã xong) → đổi texture
+        if (currentType != t.type) {
+            // Nếu skipPlaceAnimation đang bật nghĩa là restore, không muốn animation
+            if (t.skipPlaceAnimation) {
+                loadForType(t.type);
+                isUpgrading = false;
+                animTime = 0f;
+            } else {
+                changeType(t.type);
+            }
+        }
+
+        // Nếu tower đang trong trạng thái UPGRADING nhưng skipPlaceAnimation = true → bỏ animation
+        if (t.skipPlaceAnimation && isUpgrading) {
+            isUpgrading = false;
+            animTime = 0f;
+        } else if (t.getState() == Tower.State.UPGRADING && !isUpgrading && !t.skipPlaceAnimation) {
+            // Tower logic set state = UPGRADING (khi upgrade thường), phát upgrade anim nếu chưa chạy
             triggerUpgrade();
         }
+
         animTime += dt;
         if (isUpgrading && upgradeAnim.isAnimationFinished(animTime)) {
             isUpgrading = false;
@@ -99,7 +139,8 @@ public class TowerVisual {
     }
 
     public void draw(Batch batch, Tower t) {
-        TextureRegion frame = isUpgrading ? upgradeAnim.getKeyFrame(animTime) : idleAnim.getKeyFrame(animTime, true);
+        TextureRegion frame = (isUpgrading ? upgradeAnim.getKeyFrame(animTime)
+            : idleAnim.getKeyFrame(animTime, true));
         float drawX = t.pos.x - DRAW_W / 2f;
         float drawY = t.pos.y - ANCHOR_BOTTOM_TO_POSY;
         batch.draw(frame, drawX, drawY, DRAW_W, DRAW_H);
