@@ -5,8 +5,8 @@ import com.mygdx.td.entities.Tower;
 import com.mygdx.td.entities.Enemy;
 
 /**
- * AllyUnit – lính đứng trên trụ. Chỉ hiển thị / đồng bộ theo Tower.
- * Các state: IDLE -> PREATTACK -> ATTACK -> (lại IDLE)
+ * AllyUnit – lính đứng trên trụ.
+ * offsetX: lệch ngang để hỗ trợ 2 unit trên tower cấp cao.
  */
 public class AllyUnit {
 
@@ -16,18 +16,21 @@ public class AllyUnit {
     public State state = State.IDLE;
     public Facing facing = Facing.SIDE;
 
-    public float stateTime = 0f;        // thời gian trong state hiện tại
-    public float auxTimer = 0f;         // timer phụ cho PREATTACK/ATTACK
+    public float stateTime = 0f;
+    public float auxTimer   = 0f;
 
     public final Vector2 pos = new Vector2();
-    public final Vector2 dir = new Vector2(1, 0); // hướng nhìn chuẩn hoá (cập nhật mỗi frame theo tower.aimDir)
+    public final Vector2 dir = new Vector2(1, 0);
 
-    public boolean facingRight = true;  // dùng để flip khi vẽ side (strip gốc giả định nhìn sang phải)
+    public boolean facingRight = true;
+
     public float hp = 100f;
     public float maxHp = 100f;
 
     public Tower owner;
-    public Enemy targetRef; // (không dùng gây damage – chỉ để bạn mở rộng sau)
+    public Enemy targetRef;
+
+    public float offsetX = 0f;   // NEW: lệch ngang giữa nhiều ally cùng tower
 
     public boolean isDead() { return state == State.DEAD; }
 
@@ -35,7 +38,7 @@ public class AllyUnit {
         if (state != newState) {
             state = newState;
             stateTime = 0f;
-            auxTimer = 0f;
+            auxTimer  = 0f;
         }
     }
 

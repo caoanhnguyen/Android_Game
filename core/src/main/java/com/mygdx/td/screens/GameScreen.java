@@ -161,13 +161,13 @@ public class GameScreen extends InputAdapter implements Screen {
 
         mapPath = getMapPathForLevel(level);
 
-        world = new World();
+        world = new World(level);
         world.setGame(game);
         loadMap();
         applyLoadedPath();
 
         hud = new UIHud(game, world);
-        hud.setTowerTypes(TowerType.ALL);
+        hud.setTowerTypes(TowerType.forLevel(level));
         hud.setTowerSelectListener(type -> {
             if (selectedSpot != null) {
                 world.placeTowerOnSpot(selectedSpot, type);
