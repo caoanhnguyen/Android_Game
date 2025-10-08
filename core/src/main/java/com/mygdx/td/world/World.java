@@ -58,6 +58,7 @@ public class World {
     }
 
     public void setGame(TDGame game) { this.game = game; }
+    public int getDifficultyLevel() { return difficultyLevel; }
 
     public void update(float dt) {
         if (gameOver) return;
@@ -103,7 +104,7 @@ public class World {
             }
         }
 
-        // Pending shots -> bắn
+        // Pending shots
         for (int i = pendingShots.size - 1; i >= 0; i--) {
             PendingShot p = pendingShots.get(i);
             p.t -= dt;
@@ -206,11 +207,23 @@ public class World {
         return true;
     }
 
+    /**
+     * Nâng cấp tower: chỉ trả phần chênh lệch giữa cost cấp sau và cấp hiện tại.
+     * Giới hạn bởi maxAllowedUpgradeLevelForGameLevel(difficultyLevel).
+     */
     public boolean upgradeTower(Tower t) {
         TowerType next = t.type.nextLevel();
         if (next == null) return false;
-        if (gold < next.cost) return false;
-        gold -= next.cost;
+
+        int allowedMax = TowerType.maxAllowedUpgradeLevelForGameLevel(this.difficultyLevel);
+        if (next.upgradeLevel > allowedMax) {
+            return false; // vượt cấp cho phép ở map này
+        }
+
+        int incCost = TowerType.incrementalUpgradeCost(t.type, next);
+        if (gold < incCost) return false;
+
+        gold -= incCost;
         t.upgrade();
         ensureAlliesForTower(t);
         if (game != null) game.playSound(game.assets.upgradeTowerSound);
@@ -235,7 +248,6 @@ public class World {
             if (required == 1) {
                 u.offsetX = 0f;
             } else {
-                // arr.size==0 => bên trái; arr.size==1 => bên phải
                 u.offsetX = (arr.size == 0) ? -10f : 10f;
             }
             u.pos.set(tower.pos.x + u.offsetX, tower.pos.y + ALLY_Y_OFFSET);

@@ -8,9 +8,11 @@ import com.badlogic.gdx.InputAdapter;
 import com.badlogic.gdx.InputMultiplexer;
 import com.badlogic.gdx.Preferences;
 import com.badlogic.gdx.Screen;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.NinePatch;
 import com.badlogic.gdx.graphics.g2d.TextureAtlas;
@@ -63,10 +65,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * GameScreen
- * Giữ nguyên logic gameplay, đã thêm ally visual + vẽ arrow (arrowTex) xoay theo góc bullet.angleDeg.
- * Thứ tự vẽ: Enemies -> Dying -> HP bars -> Towers -> Allies -> Bullets.
- * ĐÃ THÊM: âm thanh & dialog Victory / Defeat (lose).
+ * GameScreen – FULL VERSION (range circle, dialogs, save, upgrade limits, persistent audio settings).
  */
 public class GameScreen extends InputAdapter implements Screen {
 
@@ -91,7 +90,7 @@ public class GameScreen extends InputAdapter implements Screen {
 
     final int MAP_WIDTH_TILES = 30;
     final int MAP_HEIGHT_TILES = 17;
-    final int TILE_SIZE = 32; // hoặc 64 nếu bạn dùng tile lớn
+    final int TILE_SIZE = 32;
 
     final int MAP_WIDTH_PX = MAP_WIDTH_TILES * TILE_SIZE;
     final int MAP_HEIGHT_PX = MAP_HEIGHT_TILES * TILE_SIZE;
@@ -100,9 +99,9 @@ public class GameScreen extends InputAdapter implements Screen {
     private boolean gamePaused = false;
     private final int level;
     private boolean victoryShown = false;
-    private boolean gameOverShown = false; // NEW
+    private boolean gameOverShown = false;
 
-    // Enemy frame config
+    // Enemy visuals config
     private static final int SMALL_FRAME_W = 48;
     private static final int SMALL_FRAME_H = 48;
     private static final int SMALL_FRAME_COUNT = 6;
@@ -128,7 +127,7 @@ public class GameScreen extends InputAdapter implements Screen {
     private static final float HP_BAR_HEIGHT = 6f;
     private static final float HP_BAR_Y_OFFSET = 38f;
 
-    // Settings overlay
+    // Overlay / settings
     private Stage overlayStage;
     private boolean settingsShown = false;
     private Table overlayRoot;
@@ -145,6 +144,9 @@ public class GameScreen extends InputAdapter implements Screen {
     private boolean prevMusicEnabled, prevSoundEnabled;
     private float prevMusicVolume, prevSoundVolume;
 
+    // Range circle
+    private ShapeRenderer shapeRenderer;
+
     public GameScreen(TDGame game) {
         this(game, 1);
     }
@@ -154,10 +156,11 @@ public class GameScreen extends InputAdapter implements Screen {
         this.level = level;
 
         camera = new OrthographicCamera();
-//        viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
         viewport = new FitViewport(MAP_WIDTH_PX, MAP_HEIGHT_PX, camera);
-        camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0f);
+        camera.position.set(MAP_WIDTH_PX / 2f, MAP_HEIGHT_PX / 2f, 0f);
         camera.update();
+
+        shapeRenderer = new ShapeRenderer();
 
         mapPath = getMapPathForLevel(level);
 
@@ -190,7 +193,7 @@ public class GameScreen extends InputAdapter implements Screen {
         gamePaused = hud.isPaused();
 
         overlayStage = new Stage(new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT), game.batch);
-        buildSettingsOverlay();
+        buildSettingsOverlay(); // inside this we also load persisted settings
 
         attemptResumeFromCheckpoint();
 
@@ -277,7 +280,7 @@ public class GameScreen extends InputAdapter implements Screen {
         return Math.max(1, cur + (in ? 0 : 1));
     }
 
-    /* ================= ENEMY VISUALS ================= */
+    /* ================= ENEMY VISUALS HELPERS ================= */
     private static boolean isLarge(EnemyType type) {
         switch (type) {
             case ELITE_TANK:
@@ -301,7 +304,8 @@ public class GameScreen extends InputAdapter implements Screen {
             case ELITE_GRUNT:   return "enemies/elite_grunt";
             case ELITE_RUNNER:  return "enemies/elite_runner";
             case ELITE_TANK:    return "enemies/elite_tank";
-            case MINI_BOSS, MINI_BOSS_2:     return "enemies/mini_boss";
+            case MINI_BOSS:
+            case MINI_BOSS_2:   return "enemies/mini_boss";
             case MID_BOSS:      return "enemies/mid_boss";
             case FINAL_BOSS:    return "enemies/final_boss";
             default:            return "enemies/grunt";
@@ -319,12 +323,9 @@ public class GameScreen extends InputAdapter implements Screen {
 
                 EnemyVisual vis;
                 try {
-                    vis = EnemyVisual.create(
-                        folderFor(e.type),
-                        fW, fH, fCount,
-                        WALK_FRAME_SEC, DEATH_FRAME_SEC,
-                        tSize, BASE_FACES_RIGHT
-                    );
+                    vis = EnemyVisual.create(folderFor(e.type),
+                        fW, fH, fCount, WALK_FRAME_SEC, DEATH_FRAME_SEC,
+                        tSize, BASE_FACES_RIGHT);
                 } catch (Exception ex) {
                     Gdx.app.error("EnemyVisual", "Load fail type=" + e.type + ": " + ex.getMessage());
                     continue;
@@ -366,10 +367,7 @@ public class GameScreen extends InputAdapter implements Screen {
         for (AllyUnit ally : world.allies) {
             if (!allyVisuals.containsKey(ally)) {
                 allyVisuals.put(ally, new AllyUnitVisual(
-                    ALLY_ASSET_FOLDER,
-                    (int) ALLY_FRAME_W,
-                    (int) ALLY_FRAME_H,
-                    ALLY_TILE_SIZE
+                    ALLY_ASSET_FOLDER, (int)ALLY_FRAME_W, (int)ALLY_FRAME_H, ALLY_TILE_SIZE
                 ));
             }
         }
@@ -390,23 +388,19 @@ public class GameScreen extends InputAdapter implements Screen {
         if (!gamePaused) {
             world.update(delta);
 
-            // Victory
             if (world.isVictory() && !victoryShown) {
                 victoryShown = true;
                 SaveManager.clearCheckpoint();
-                if (game.assets.win_sound != null && game.soundEnabled) {
+                if (game.assets.win_sound != null && game.soundEnabled)
                     game.playSound(game.assets.win_sound);
-                }
                 showVictoryDialog();
             }
 
-            // Defeat
             if (world.gameOver && !gameOverShown && !victoryShown) {
                 gameOverShown = true;
                 SaveManager.clearCheckpoint();
-                if (game.assets.lose_sound != null && game.soundEnabled) {
+                if (game.assets.lose_sound != null && game.soundEnabled)
                     game.playSound(game.assets.lose_sound);
-                }
                 showGameOverDialog();
             }
 
@@ -425,32 +419,48 @@ public class GameScreen extends InputAdapter implements Screen {
             mapRenderer.render();
         }
 
+        // Range circle
+        if (selectedTower != null && shapeRenderer != null) {
+            Gdx.gl.glEnable(GL20.GL_BLEND);
+            shapeRenderer.setProjectionMatrix(camera.combined);
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+            shapeRenderer.setColor(0f, 0.8f, 1f, 0.15f);
+            shapeRenderer.circle(selectedTower.pos.x, selectedTower.pos.y, selectedTower.getRange(), 80);
+            shapeRenderer.end();
+
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+            shapeRenderer.setColor(0f, 0.95f, 1f, 0.55f);
+            shapeRenderer.circle(selectedTower.pos.x, selectedTower.pos.y, selectedTower.getRange(), 80);
+            shapeRenderer.end();
+            Gdx.gl.glDisable(GL20.GL_BLEND);
+        }
+
         game.batch.setProjectionMatrix(camera.combined);
         game.batch.begin();
 
-        // 1. Enemies
+        // Enemies
         for (Enemy e : world.enemies) {
             EnemyVisual v = enemyVisuals.get(e);
             if (v != null) v.draw(game.batch, e);
         }
-        // 2. Dying enemies
+        // Dying
         for (ObjectMap.Entry<Enemy, EnemyVisual> entry : dyingEnemyVisuals.entries()) {
             entry.value.draw(game.batch, entry.key);
         }
-        // 3. Enemy HP bars
+        // HP bars
         for (Enemy e : world.enemies) {
             if (e.isDead()) continue;
             float pct = Math.max(0f, Math.min(1f, e.getHpPercent()));
             float bw = HP_BAR_WIDTH, bh = HP_BAR_HEIGHT;
             float bx = e.getPos().x - bw / 2f;
             float by = e.getPos().y + HP_BAR_Y_OFFSET;
-            game.batch.setColor(0, 0, 0, 0.6f);
+            game.batch.setColor(0,0,0,0.6f);
             game.batch.draw(game.assets.whitePixel, bx, by, bw, bh);
-            game.batch.setColor(0, 1, 0, 1);
+            game.batch.setColor(0,1,0,1);
             game.batch.draw(game.assets.whitePixel, bx, by, bw * pct, bh);
-            game.batch.setColor(1, 1, 1, 1);
+            game.batch.setColor(1,1,1,1);
         }
-        // 4. Towers
+        // Towers
         for (Tower t : world.towers) {
             TowerVisual v = towerVisuals.get(t);
             if (v == null) {
@@ -461,37 +471,32 @@ public class GameScreen extends InputAdapter implements Screen {
             v.update(t, delta);
             v.draw(game.batch, t);
         }
-        // 5. Allies
+        // Allies
         for (AllyUnit ally : world.allies) {
             AllyUnitVisual v = allyVisuals.get(ally);
             if (v != null) v.draw(game.batch, ally, ally.stateTime);
         }
-        // 6. Bullets (arrow rotated)
+        // Bullets
         for (Bullet b : world.bullets) {
             Texture tex = game.assets.arrowTex != null ? game.assets.arrowTex : game.assets.bulletTex;
             if (tex == null) continue;
-
             float texW = tex.getWidth();
             float texH = tex.getHeight();
-            float drawW = texW;
-            float drawH = texH;
-
-            float originX = drawW * 0.15f;
-            float originY = drawH / 2f;
-
+            float originX = texW * 0.15f;
+            float originY = texH / 2f;
             game.batch.draw(
                 tex,
                 b.pos.x - originX,
                 b.pos.y - originY,
                 originX,
                 originY,
-                drawW,
-                drawH,
+                texW,
+                texH,
                 1f,
                 1f,
                 b.angleDeg,
                 0, 0,
-                (int) texW, (int) texH,
+                (int)texW, (int)texH,
                 false, false
             );
         }
@@ -520,6 +525,7 @@ public class GameScreen extends InputAdapter implements Screen {
         Tower tower = findTowerAt(wx, wy, 40);
         if (tower != null) {
             selectedTower = tower;
+            selectedSpot = null;
             hud.showUpgradePopupHUD(tower, () -> {
                 if (world.upgradeTower(tower)) {
                     TowerVisual v = towerVisuals.get(tower);
@@ -533,8 +539,11 @@ public class GameScreen extends InputAdapter implements Screen {
         TowerSpot spot = findHoverSpot(wx, wy);
         if (spot != null && !spot.used) {
             selectedSpot = spot;
+            selectedTower = null;
             hud.showTowerPopupHUD();
             return true;
+        } else {
+            if (spot == null) selectedTower = null;
         }
         return false;
     }
@@ -552,9 +561,14 @@ public class GameScreen extends InputAdapter implements Screen {
         return null;
     }
 
-    /* ================= SETTINGS OVERLAY ================= */
+    /* ================= SETTINGS OVERLAY & DIALOGS ================= */
+
     private void buildSettingsOverlay() {
         prefs = Gdx.app.getPreferences("td_settings");
+
+        // Load persisted settings BEFORE building widgets
+        loadAudioSettingsFromPrefs();
+
         try {
             titleFont = new BitmapFont(Gdx.files.internal("font/font_title.fnt"));
             titleFont.setUseIntegerPositions(false);
@@ -562,10 +576,10 @@ public class GameScreen extends InputAdapter implements Screen {
             titleFont = new BitmapFont();
         }
 
-        NinePatch framePatch = new NinePatch(new Texture(Gdx.files.internal("ui/banner_11.9.png")), 16, 16, 16, 16);
+        NinePatch framePatch = new NinePatch(new Texture(Gdx.files.internal("ui/banner_11.9.png")),16,16,16,16);
         frameDrawable = new NinePatchDrawable(framePatch);
 
-        NinePatch sliderPatch = new NinePatch(new Texture(Gdx.files.internal("ui/bg_slider.9.png")), 8, 8, 8, 8);
+        NinePatch sliderPatch = new NinePatch(new Texture(Gdx.files.internal("ui/bg_slider.9.png")),8,8,8,8);
         sliderBgDrawable = new NinePatchDrawable(sliderPatch);
 
         TextureAtlas sliderAtlas = new TextureAtlas(Gdx.files.internal("ui/knob.atlas"));
@@ -601,18 +615,28 @@ public class GameScreen extends InputAdapter implements Screen {
         frameImg.setColor(1,1,1,0.93f);
 
         frameStack = new Stack(frameImg, settingsContent);
-        buildSettingsInnerContent();
+        buildSettingsInnerContent(); // builds controls using loaded values
 
         Table center = new Table();
         center.setFillParent(true);
         overlayStage.addActor(center);
 
-        float frameWidth = 560f;
-        float frameHeight = 230f;
+        float frameWidth = 560f, frameHeight = 230f;
         overlayRoot.add(dimBg).grow();
         center.add(frameStack).width(frameWidth).height(frameHeight).center();
 
         setOverlayVisible(false);
+    }
+
+    private void loadAudioSettingsFromPrefs() {
+        // Booleans
+        game.musicEnabled = prefs.getBoolean("musicEnabled", game.musicEnabled);
+        game.soundEnabled = prefs.getBoolean("soundEnabled", game.soundEnabled);
+        // Volumes
+        game.musicVolume  = prefs.getFloat("musicVolume", game.musicVolume);
+        game.soundVolume  = prefs.getFloat("soundVolume", game.soundVolume);
+        // Apply immediately (stop music if disabled)
+        applyMusicNow();
     }
 
     private ImageButton.ImageButtonStyle mkBtnStyle(Skin upPack, Skin overPack, String up, String over, String down) {
@@ -637,12 +661,10 @@ public class GameScreen extends InputAdapter implements Screen {
         sliderStyle.background = sliderBgDrawable;
         sliderStyle.knob = sliderSkin.getDrawable("knob");
 
-        ImageButton.ImageButtonStyle musicOn = mkBtnStyle(iconSkinActive, iconSkinInactive, "row-8-column-8", "row-8-column-7", "row-8-column-9");
-        ImageButton.ImageButtonStyle musicOff = mkBtnStyle(iconSkinInactive, iconSkinActive, "row-8-column-9", "row-8-column-7", "row-8-column-8");
-        ImageButton.ImageButtonStyle soundOn = mkBtnStyle(iconSkinActive, iconSkinInactive, "row-7-column-8", "row-7-column-7", "row-7-column-9");
-        ImageButton.ImageButtonStyle soundOff = mkBtnStyle(iconSkinInactive, iconSkinActive, "row-7-column-9", "row-7-column-7", "row-7-column-8");
-
-        BitmapFont f = titleFont;
+        ImageButton.ImageButtonStyle musicOn  = mkBtnStyle(iconSkinActive, iconSkinInactive, "row-8-column-8","row-8-column-7","row-8-column-9");
+        ImageButton.ImageButtonStyle musicOff = mkBtnStyle(iconSkinInactive, iconSkinActive, "row-8-column-9","row-8-column-7","row-8-column-8");
+        ImageButton.ImageButtonStyle soundOn  = mkBtnStyle(iconSkinActive, iconSkinInactive, "row-7-column-8","row-7-column-7","row-7-column-9");
+        ImageButton.ImageButtonStyle soundOff = mkBtnStyle(iconSkinInactive, iconSkinActive, "row-7-column-9","row-7-column-7","row-7-column-8");
 
         musicBtn = new ImageButton(game.musicEnabled ? musicOn : musicOff);
         musicBtn.addListener(new ClickListener() {
@@ -666,31 +688,31 @@ public class GameScreen extends InputAdapter implements Screen {
         musicSlider = new Slider(0f,1f,0.01f,false, sliderStyle);
         soundSlider = new Slider(0f,1f,0.01f,false, sliderStyle);
 
-        float mVol = prefs.getFloat("musicVolume", game.musicVolume);
-        float sVol = prefs.getFloat("soundVolume", game.soundVolume);
-        game.musicVolume = mVol;
-        game.soundVolume = sVol;
-        musicSlider.setValue(mVol);
-        soundSlider.setValue(sVol);
-        applyMusicNow();
+        musicSlider.setValue(game.musicVolume);
+        soundSlider.setValue(game.soundVolume);
 
-        musicSlider.addListener(new ChangeListener() { @Override public void changed(ChangeEvent event, com.badlogic.gdx.scenes.scene2d.Actor actor) {
-            game.musicVolume = musicSlider.getValue();
-            applyMusicNow();
-        }});
-        soundSlider.addListener(new ChangeListener() { @Override public void changed(ChangeEvent event, com.badlogic.gdx.scenes.scene2d.Actor actor) {
-            game.soundVolume = soundSlider.getValue();
-        }});
+        musicSlider.addListener(new ChangeListener() {
+            @Override public void changed(ChangeEvent event, com.badlogic.gdx.scenes.scene2d.Actor actor) {
+                game.musicVolume = musicSlider.getValue();
+                applyMusicNow();
+            }
+        });
+        soundSlider.addListener(new ChangeListener() {
+            @Override public void changed(ChangeEvent event, com.badlogic.gdx.scenes.scene2d.Actor actor) {
+                game.soundVolume = soundSlider.getValue();
+            }
+        });
 
         settingsContent.clear();
         settingsContent.defaults().left();
 
-        settingsContent.add(new Label("Music", new Label.LabelStyle(f, com.badlogic.gdx.graphics.Color.WHITE))).padRight(12);
+        BitmapFont f = titleFont;
+        settingsContent.add(new Label("Music", new Label.LabelStyle(f, Color.WHITE))).padRight(12);
         settingsContent.add(musicBtn).size(48,48).padRight(12);
         settingsContent.add(musicSlider).width(320);
         settingsContent.row().padTop(16);
 
-        settingsContent.add(new Label("Sound", new Label.LabelStyle(f, com.badlogic.gdx.graphics.Color.WHITE))).padRight(12);
+        settingsContent.add(new Label("Sound", new Label.LabelStyle(f, Color.WHITE))).padRight(12);
         settingsContent.add(soundBtn).size(48,48).padRight(12);
         settingsContent.add(soundSlider).width(320);
         settingsContent.row().padTop(14);
@@ -705,20 +727,23 @@ public class GameScreen extends InputAdapter implements Screen {
         saveBtn = new TextButton(" ", saveStyle);
         backBtn = new TextButton(" ", backStyle);
 
-        saveBtn.addListener(new ClickListener() { @Override public void clicked(InputEvent event, float x, float y) {
-            saveSettings();
-            game.playSound(game.assets.gameClickSound);
-            hideSettingsOverlay();
-        }});
-        backBtn.addListener(new ClickListener() { @Override public void clicked(InputEvent event, float x, float y) {
-            game.playSound(game.assets.gameClickSound);
-            onBackNotSave();
-        }});
+        saveBtn.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) {
+                saveSettings();
+                game.playSound(game.assets.gameClickSound);
+                hideSettingsOverlay();
+            }
+        });
+        backBtn.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) {
+                game.playSound(game.assets.gameClickSound);
+                onBackNotSave();
+            }
+        });
 
         Table btnRow = new Table();
         btnRow.add(saveBtn).size(bw, bh).padRight(12);
         btnRow.add(backBtn).size(bw, bh);
-
         settingsContent.add(btnRow).colspan(3).center().padTop(24);
     }
 
@@ -748,75 +773,103 @@ public class GameScreen extends InputAdapter implements Screen {
         frameStack.setVisible(v);
     }
 
-    private void toggleSettingsOverlay() {
-        if (settingsShown) hideSettingsOverlay(); else showSettingsOverlay();
-    }
+    private void toggleSettingsOverlay() { if (settingsShown) hideSettingsOverlay(); else showSettingsOverlay(); }
 
     private void showSettingsOverlay() {
         prevMusicEnabled = game.musicEnabled;
         prevSoundEnabled = game.soundEnabled;
-        prevMusicVolume = game.musicVolume;
-        prevSoundVolume = game.soundVolume;
+        prevMusicVolume  = game.musicVolume;
+        prevSoundVolume  = game.soundVolume;
         setOverlayVisible(true);
     }
 
     private void onBackNotSave() {
         game.musicEnabled = prevMusicEnabled;
         game.soundEnabled = prevSoundEnabled;
-        game.musicVolume = prevMusicVolume;
-        game.soundVolume = prevSoundVolume;
+        game.musicVolume  = prevMusicVolume;
+        game.soundVolume  = prevSoundVolume;
         applyMusicNow();
         hideSettingsOverlay();
     }
 
     private void hideSettingsOverlay() { setOverlayVisible(false); }
 
-    /* ================= DIALOGS ================= */
+    /* ======= Dialog Helpers ======= */
+    private Table baseDialog(String text, float scale) {
+        Table dialog = new Table();
+        dialog.setBackground(frameDrawable);
+        dialog.pad(16f);
+        Label msg = new Label(text, new Label.LabelStyle(titleFont, Color.WHITE));
+        msg.setFontScale(scale);
+        msg.setAlignment(Align.center);
+        msg.setWrap(true);
+        Table wrap = new Table();
+        wrap.add(msg).width(520f - 48f).center();
+        dialog.add(wrap).expand().fill().row();
+        return dialog;
+    }
+
+    private void centerDialog(Table dialog, float w, float h) {
+        dialog.setSize(w, h);
+        dialog.setPosition(
+            overlayStage.getViewport().getWorldWidth()/2f - w/2f,
+            overlayStage.getViewport().getWorldHeight()/2f - h/2f
+        );
+    }
+
+    private TextButton.TextButtonStyle mkTextStyle(String base, float scale) {
+        TextButton.TextButtonStyle st = new TextButton.TextButtonStyle();
+        st.up   = buttonSkin.getDrawable(base + "_over");
+        st.over = buttonSkin.getDrawable(base + "_up");
+        st.down = buttonSkin.getDrawable(base + "_down");
+        st.font = titleFont;
+        return st;
+    }
+
+    private void sizeDialogButton(TextButton btn) {
+        Drawable measure = buttonSkin.getDrawable("START_up");
+        float w = measure.getMinWidth() * 1.35f;
+        float h = measure.getMinHeight() * 1.35f;
+        btn.setSize(w, h);
+    }
+
     private void showVictoryDialog() {
         final float W = 520f, H = 220f;
-        final Table dialog = baseDialog("VICTORY!\nYOU CLEARED ALL 20 WAVES", 0.9f);
-
-        TextButton ok = new TextButton(" ", mkTextStyle("SAVE", titleFont));
+        Table dialog = baseDialog("VICTORY!\nYOU CLEARED ALL WAVES", 0.9f);
+        TextButton ok = new TextButton(" ", mkTextStyle("SAVE", 1f));
         sizeDialogButton(ok);
-
-        Table btns = new Table();
-        btns.add(ok);
-        dialog.add(btns).center().padTop(12);
-
+        Table btn = new Table(); btn.add(ok);
+        dialog.add(btn).padTop(14);
         centerDialog(dialog, W, H);
         overlayStage.addActor(dialog);
-
-        ok.addListener(new ClickListener() { @Override public void clicked(InputEvent event, float x, float y) {
-            dialog.remove();
-            world.clearVictory();
-            exitToSelectLevel();
-        }});
+        ok.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) {
+                dialog.remove();
+                world.clearVictory();
+                exitToSelectLevel();
+            }
+        });
     }
 
     private void showGameOverDialog() {
         final float W = 520f, H = 220f;
-        final Table dialog = baseDialog("DEFEAT!\nTRY AGAIN?", 0.9f);
-
-        TextButton retry = new TextButton(" ", mkTextStyle("SAVE", titleFont));
-        TextButton exit  = new TextButton(" ", mkTextStyle("BACK", titleFont));
+        Table dialog = baseDialog("DEFEAT!\nTRY AGAIN?", 0.9f);
+        TextButton retry = new TextButton(" ", mkTextStyle("SAVE", 1f));
+        TextButton exit  = new TextButton(" ", mkTextStyle("BACK", 1f));
         sizeDialogButton(retry);
         sizeDialogButton(exit);
-
         Table btns = new Table();
         btns.add(retry).padRight(16);
         btns.add(exit);
-        dialog.add(btns).center().padTop(18);
-
+        dialog.add(btns).padTop(18);
         centerDialog(dialog, W, H);
         overlayStage.addActor(dialog);
-
         retry.addListener(new ClickListener() {
             @Override public void clicked(InputEvent event, float x, float y) {
                 dialog.remove();
                 world.reset();
                 victoryShown = false;
                 gameOverShown = false;
-                // Chờ người chơi bấm start wave lại (HUD) -> không tự start để họ chuẩn bị.
             }
         });
         exit.addListener(new ClickListener() {
@@ -829,63 +882,34 @@ public class GameScreen extends InputAdapter implements Screen {
 
     private void showExitToSelectConfirm() {
         final float W = 520f, H = 220f;
-        final Table dialog = baseDialog("EXIT TO LEVEL SELECT?\nPROGRESS WILL BE SAVED AS A CHECKPOINT", 0.8f);
-
-        TextButton ok = new TextButton(" ", mkTextStyle("SAVE", titleFont));
-        TextButton cancel = new TextButton(" ", mkTextStyle("BACK", titleFont));
+        Table dialog = baseDialog("EXIT TO LEVEL SELECT?\nPROGRESS WILL BE SAVED", 0.8f);
+        TextButton ok = new TextButton(" ", mkTextStyle("SAVE", 1f));
+        TextButton cancel = new TextButton(" ", mkTextStyle("BACK", 1f));
         sizeDialogButton(ok);
         sizeDialogButton(cancel);
-
-        Table btns = new Table();
-        btns.add(ok).padRight(16);
-        btns.add(cancel);
-        dialog.add(btns).center().padTop(24);
-
+        Table row = new Table();
+        row.add(ok).padRight(16);
+        row.add(cancel);
+        dialog.add(row).padTop(24);
         centerDialog(dialog, W, H);
         overlayStage.addActor(dialog);
 
-        ok.addListener(new ClickListener() { @Override public void clicked(InputEvent event, float x, float y) {
-            int next = computeNextWaveForSave();
-            SaveManager.saveCheckpoint(level, world, next);
-            dialog.remove();
-            exitToSelectLevel();
-        }});
-        cancel.addListener(new ClickListener() { @Override public void clicked(InputEvent event, float x, float y) { dialog.remove(); }});
-    }
-
-    private Table baseDialog(String text, float scale) {
-        Table dialog = new Table();
-        dialog.setBackground(frameDrawable);
-        dialog.pad(16f);
-        Label.LabelStyle ls = new Label.LabelStyle(titleFont, com.badlogic.gdx.graphics.Color.WHITE);
-        Label msg = new Label(text, ls);
-        msg.setAlignment(Align.center);
-        msg.setFontScale(scale);
-        msg.setWrap(true);
-        Table wrap = new Table();
-        wrap.add(msg).width(520f - 48f).center();
-        dialog.add(wrap).expand().fill().row();
-        return dialog;
-    }
-
-    private void centerDialog(Table dialog, float w, float h) {
-        dialog.setSize(w, h);
-        dialog.setPosition(
-            overlayStage.getViewport().getWorldWidth() / 2f - w / 2f,
-            overlayStage.getViewport().getWorldHeight() / 2f - h / 2f
-        );
-    }
-
-    private void sizeDialogButton(TextButton btn) {
-        Drawable measure = buttonSkin.getDrawable("START_up");
-        float w = measure.getMinWidth() * 1.35f;
-        float h = measure.getMinHeight() * 1.35f;
-        btn.setSize(w, h);
+        ok.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) {
+                int next = computeNextWaveForSave();
+                SaveManager.saveCheckpoint(level, world, next);
+                dialog.remove();
+                exitToSelectLevel();
+            }
+        });
+        cancel.addListener(new ClickListener() {
+            @Override public void clicked(InputEvent event, float x, float y) { dialog.remove(); }
+        });
     }
 
     private void exitToSelectLevel() {
         setOverlayVisible(false);
-        game.setScreen(new com.mygdx.td.screens.SelectLevelScreen(game));
+        game.setScreen(new SelectLevelScreen(game));
     }
 
     /* ================= LIFECYCLE ================= */
@@ -916,6 +940,7 @@ public class GameScreen extends InputAdapter implements Screen {
         dyingEnemyVisuals.clear();
         for (AllyUnitVisual v : allyVisuals.values()) v.dispose();
         allyVisuals.clear();
+        if (shapeRenderer != null) shapeRenderer.dispose();
         if (overlayStage != null) overlayStage.dispose();
     }
 }
