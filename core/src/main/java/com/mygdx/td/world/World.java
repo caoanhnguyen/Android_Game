@@ -7,6 +7,7 @@ import com.badlogic.gdx.utils.ObjectMap;
 import com.mygdx.td.Constants;
 import com.mygdx.td.TDGame;
 import com.mygdx.td.ally.AllyUnit;
+import com.mygdx.td.abilities.AbilityManager;
 import com.mygdx.td.entities.Bullet;
 import com.mygdx.td.entities.Enemy;
 import com.mygdx.td.entities.Tower;
@@ -14,7 +15,7 @@ import com.mygdx.td.entities.TowerType;
 import com.mygdx.td.managers.WaveManager;
 
 /**
- * World với hỗ trợ đa ally cho tower cấp 4–5 và difficulty level.
+ * World – quản lý state game & logic cơ bản.
  */
 public class World {
 
@@ -23,7 +24,6 @@ public class World {
     public final Array<Bullet> bullets = new Array<>();
     public final Array<AllyUnit> allies = new Array<>();
 
-    // Tower -> (1 hoặc 2) allies
     private final ObjectMap<Tower, Array<AllyUnit>> towerAlliesMap = new ObjectMap<>();
 
     public final Path path = new Path();
@@ -42,6 +42,9 @@ public class World {
 
     private final int difficultyLevel;
 
+    // Abilities
+    public final AbilityManager abilityManager;
+
     private static class PendingShot {
         Tower tower; Enemy target; float t;
         PendingShot(Tower tower, Enemy target, float t) { this.tower = tower; this.target = target; this.t = t; }
@@ -55,15 +58,18 @@ public class World {
     public World(int difficultyLevel) {
         this.difficultyLevel = Math.max(1, difficultyLevel);
         this.waveManager = new WaveManager(this, this.difficultyLevel);
+        this.abilityManager = new AbilityManager(this);
     }
 
     public void setGame(TDGame game) { this.game = game; }
+    public TDGame getGame() { return game; } // NEW: cho AbilityManager truy cập playSound/assets
     public int getDifficultyLevel() { return difficultyLevel; }
 
     public void update(float dt) {
         if (gameOver) return;
 
         waveManager.update(dt);
+        abilityManager.update(dt);
 
         // ENEMIES
         for (int i = enemies.size - 1; i >= 0; i--) {
@@ -98,9 +104,8 @@ public class World {
                 float delay = t.beginAttackTowards(target.pos.x, target.pos.y);
                 pendingShots.add(new PendingShot(t, target, delay));
                 Array<AllyUnit> arr = towerAlliesMap.get(t);
-                if (arr != null) {
+                if (arr != null)
                     for (AllyUnit al : arr) if (al != null && !al.isDead()) al.setState(AllyUnit.State.PREATTACK);
-                }
             }
         }
 
@@ -113,9 +118,8 @@ public class World {
                     spawnBullet(p.tower, p.target);
                 }
                 Array<AllyUnit> arr = towerAlliesMap.get(p.tower);
-                if (arr != null) {
+                if (arr != null)
                     for (AllyUnit al : arr) if (al != null && !al.isDead()) al.setState(AllyUnit.State.ATTACK);
-                }
                 pendingShots.removeIndex(i);
             }
         }
@@ -147,6 +151,7 @@ public class World {
             }
         }
 
+        // Victory
         if (!victory && waveManager.isAllWavesCompleted() && !waveManager.isInWave() && enemies.size == 0) {
             victory = true;
         }
@@ -207,18 +212,11 @@ public class World {
         return true;
     }
 
-    /**
-     * Nâng cấp tower: chỉ trả phần chênh lệch giữa cost cấp sau và cấp hiện tại.
-     * Giới hạn bởi maxAllowedUpgradeLevelForGameLevel(difficultyLevel).
-     */
     public boolean upgradeTower(Tower t) {
         TowerType next = t.type.nextLevel();
         if (next == null) return false;
-
-        int allowedMax = TowerType.maxAllowedUpgradeLevelForGameLevel(this.difficultyLevel);
-        if (next.upgradeLevel > allowedMax) {
-            return false; // vượt cấp cho phép ở map này
-        }
+        int allowedMax = TowerType.maxAllowedUpgradeLevelForGameLevel(difficultyLevel);
+        if (next.upgradeLevel > allowedMax) return false;
 
         int incCost = TowerType.incrementalUpgradeCost(t.type, next);
         if (gold < incCost) return false;
@@ -228,33 +226,6 @@ public class World {
         ensureAlliesForTower(t);
         if (game != null) game.playSound(game.assets.upgradeTowerSound);
         return true;
-    }
-
-    private void ensureAlliesForTower(Tower tower) {
-        int required = (tower.type.upgradeLevel >= 3) ? 2 : 1;
-        Array<AllyUnit> arr = towerAlliesMap.get(tower);
-        if (arr == null) {
-            arr = new Array<>();
-            towerAlliesMap.put(tower, arr);
-        }
-        // remove dead
-        for (int i = arr.size - 1; i >= 0; i--) {
-            if (arr.get(i) == null || arr.get(i).isDead()) arr.removeIndex(i);
-        }
-        while (arr.size > required) arr.removeIndex(arr.size - 1);
-        while (arr.size < required) {
-            AllyUnit u = new AllyUnit();
-            u.owner = tower;
-            if (required == 1) {
-                u.offsetX = 0f;
-            } else {
-                u.offsetX = (arr.size == 0) ? -10f : 10f;
-            }
-            u.pos.set(tower.pos.x + u.offsetX, tower.pos.y + ALLY_Y_OFFSET);
-            u.setState(AllyUnit.State.IDLE);
-            allies.add(u);
-            arr.add(u);
-        }
     }
 
     private Enemy findTarget(float x, float y, float range) {
@@ -322,6 +293,7 @@ public class World {
         towerAlliesMap.clear();
         pendingShots.clear();
         waveManager.reset();
+        abilityManager.reset();
         gold = 150;
         lives = 20;
         lifeLostFlag = false;
@@ -346,14 +318,34 @@ public class World {
         ensureAlliesForTower(t);
     }
 
+    private void ensureAlliesForTower(Tower tower) {
+        int required = (tower.type.upgradeLevel >= 3) ? 2 : 1;
+        Array<AllyUnit> arr = towerAlliesMap.get(tower);
+        if (arr == null) {
+            arr = new Array<>();
+            towerAlliesMap.put(tower, arr);
+        }
+        for (int i = arr.size - 1; i >= 0; i--) {
+            if (arr.get(i) == null || arr.get(i).isDead()) arr.removeIndex(i);
+        }
+        while (arr.size > required) arr.removeIndex(arr.size - 1);
+        while (arr.size < required) {
+            AllyUnit u = new AllyUnit();
+            u.owner = tower;
+            u.offsetX = required == 1 ? 0f : (arr.size == 0 ? -10f : 10f);
+            u.pos.set(tower.pos.x + u.offsetX, tower.pos.y + ALLY_Y_OFFSET);
+            u.setState(AllyUnit.State.IDLE);
+            allies.add(u);
+            arr.add(u);
+        }
+    }
+
     private TowerSpot findSpotByRectApprox(Rectangle r) {
         for (TowerSpot s : towerSpots) {
             if (approxEq(s.rect.x, r.x)
                 && approxEq(s.rect.y, r.y)
                 && approxEq(s.rect.width, r.width)
-                && approxEq(s.rect.height, r.height)) {
-                return s;
-            }
+                && approxEq(s.rect.height, r.height)) return s;
         }
         return null;
     }

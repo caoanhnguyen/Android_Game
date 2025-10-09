@@ -51,6 +51,8 @@ public class Assets {
     public Sound arrowShootSound;
     public Sound win_sound;
     public Sound lose_sound;
+    public Sound lightning_sound;
+    public Sound barrel_sound;
 
     public void loadAllAsync() {
         // Gameplay textures
@@ -84,6 +86,8 @@ public class Assets {
         safeLoadSound("sounds/arrow_shoot.mp3");
         safeLoadSound("sounds/win_sound.wav");
         safeLoadSound("sounds/lose_sound.wav");
+        safeLoadSound("sounds/lightning.mp3");
+        safeLoadSound("sounds/boom.mp3");
     }
 
     private void safeLoadTexture(String path) {
@@ -146,6 +150,8 @@ public class Assets {
         arrowShootSound = getSound("sounds/arrow_shoot.mp3");
         win_sound = getSound("sounds/win_sound.wav");
         lose_sound = getSound("sounds/lose_sound.wav");
+        lightning_sound = getSound("sounds/lightning.mp3");
+        barrel_sound = getSound("sounds/boom.mp3");
 
         if (menuBg == null) {
             Gdx.app.error("ASSETS", "menuBg NULL - kiểm tra tên file: ui/background.png");
